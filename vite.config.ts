@@ -1,0 +1,32 @@
+import { defineConfig, loadEnv } from "vite";
+import react from "@vitejs/plugin-react";
+
+const hostFromUrl = (value?: string) => {
+  try {
+    return value ? new URL(value).hostname : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, process.cwd(), "");
+  const webappHost = hostFromUrl(env.WEBAPP_URL);
+  const oidcHost = hostFromUrl(env.TELEGRAM_OIDC_REDIRECT_URI);
+  const allowedHosts = Array.from(
+    new Set(["subtrifid-krystyna-suspensively.ngrok-free.dev", webappHost, oidcHost].filter(Boolean) as string[]),
+  );
+
+  return {
+    plugins: [react()],
+    server: {
+      allowedHosts,
+      proxy: {
+        "/api": {
+          target: "http://localhost:8787",
+          changeOrigin: true,
+        },
+      },
+    },
+  };
+});
