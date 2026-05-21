@@ -156,6 +156,21 @@ function OrganizerLogin({ authMessage, returnTo }: { authMessage: string; return
 
 function LaunchState({ authState, authMessage }: { authState: AuthState; authMessage: string }) {
   const isError = authState === "failed" || authState === "telegram_required";
+  const [devLoginPending, setDevLoginPending] = useState(false);
+  const [devLoginError, setDevLoginError] = useState("");
+
+  const loginLocally = async () => {
+    setDevLoginPending(true);
+    setDevLoginError("");
+    try {
+      await apiClient.authLocalDevParticipant();
+      window.location.reload();
+    } catch (error) {
+      setDevLoginPending(false);
+      setDevLoginError(error instanceof Error ? error.message : "Локальный вход не сработал");
+    }
+  };
+
   return (
     <main className="flex min-h-screen items-center justify-center px-4 py-8">
       <Card className="w-full max-w-[520px] p-7 text-center sm:p-9">
@@ -171,6 +186,19 @@ function LaunchState({ authState, authMessage }: { authState: AuthState; authMes
         {!isError ? (
           <div className="mx-auto mt-7 h-2 w-36 overflow-hidden rounded-full bg-white/60">
             <div className="h-full w-1/2 animate-[shelfIn_1.2s_ease-in-out_infinite] rounded-full bg-[#0071e3]" />
+          </div>
+        ) : null}
+        {import.meta.env.DEV ? (
+          <div className="mt-7 border-t border-white/60 pt-6">
+            <p className="text-[13px] leading-6 text-slate-500">Локальный режим разработки открывает демо-участника без Telegram initData.</p>
+            <button
+              className="liquid-control button-press mt-4 inline-flex min-h-12 items-center justify-center rounded-full px-6 py-3 text-[15px] font-semibold text-[#0066cc] disabled:cursor-wait disabled:opacity-60"
+              disabled={devLoginPending}
+              onClick={() => void loginLocally()}
+            >
+              {devLoginPending ? "Входим..." : "Войти локально"}
+            </button>
+            {devLoginError ? <p className="mt-4 text-[13px] leading-6 text-rose-500">{devLoginError}</p> : null}
           </div>
         ) : null}
       </Card>

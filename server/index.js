@@ -25,6 +25,7 @@ import {
   createOrganizerEvent,
   getCurrentUserFromSessionToken,
   getContacts,
+  getCurrentUserDev,
   getDemoEvent,
   getEventHome,
   getEventMembers,
@@ -69,6 +70,12 @@ const json = (res, status, body, headers = {}) => {
 };
 
 const readJson = async (req) => {
+  if (req.body !== undefined) {
+    if (typeof req.body === "string") return req.body ? JSON.parse(req.body) : {};
+    if (Buffer.isBuffer(req.body)) return req.body.length ? JSON.parse(req.body.toString("utf8")) : {};
+    return req.body || {};
+  }
+
   const chunks = [];
   for await (const chunk of req) chunks.push(chunk);
   if (!chunks.length) return {};
@@ -416,6 +423,24 @@ const routes = [
     return json(res, 200, await getDemoEvent());
   }),
 
+  route("POST", /^\/api\/dev\/login-participant$/, async (_req, res) => {
+    if (!isDev) return json(res, 404, { error: "Not found" });
+    const user = await getCurrentUserDev();
+    const join = await joinEvent({ userId: user.id, inviteCode: "demo2026" });
+    const { rawToken } = await createAppSession({ userId: user.id, authMethod: "dev_local" });
+    await createAppOpenedEvent({ userId: user.id, eventId: join.event?.id });
+    return json(
+      res,
+      200,
+      {
+        ok: true,
+        activeEvent: join.event,
+        me: await getMe(user.id),
+      },
+      { "Set-Cookie": sessionCookie(rawToken) },
+    );
+  }),
+
   route("GET", /^\/api\/dev\/dashboard$/, async (_req, res) => {
     if (!isDev) return json(res, 404, { error: "Not found" });
     const demo = await getDemoEvent();
@@ -430,7 +455,7 @@ const routes = [
   }),
 ];
 
-const server = http.createServer(async (req, res) => {
+export const handleApiRequest = async (req, res) => {
   try {
     const url = new URL(req.url, `http://${req.headers.host}`);
     if (req.method === "OPTIONS") {
@@ -449,8 +474,12 @@ const server = http.createServer(async (req, res) => {
     console.error(error);
     return json(res, error.status || 500, { error: error.message || "Internal Server Error" });
   }
-});
+};
 
-server.listen(port, "0.0.0.0", () => {
-  console.log(`FUP API server listening on http://localhost:${port}`);
-});
+const server = http.createServer(handleApiRequest);
+
+if (!process.env.VERCEL) {
+  server.listen(port, "0.0.0.0", () => {
+    console.log(`FUP API server listening on http://localhost:${port}`);
+  });
+}

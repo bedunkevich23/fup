@@ -1,3 +1,5 @@
+import { hapticSelection } from "../../lib/telegram";
+
 export function AppleSwitch({
   checked,
   onChange,
@@ -13,7 +15,10 @@ export function AppleSwitch({
       role="switch"
       aria-checked={checked}
       aria-label={label}
-      onClick={() => onChange(!checked)}
+      onClick={() => {
+        hapticSelection();
+        onChange(!checked);
+      }}
       className={`button-press relative h-[31px] w-[51px] rounded-full transition ${
         checked ? "bg-[#34c759]" : "bg-[#e9e9eb]"
       }`}

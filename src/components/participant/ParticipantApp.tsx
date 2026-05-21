@@ -1,14 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { Bell, Check, Clock3, Home, MessageCircle, Plus, Search, Send, Users } from "lucide-react";
+import { Bell, Check, Clock3, Plus, Search, Send } from "lucide-react";
 import { apiClient } from "../../lib/apiClient";
-import { hapticImpact, hapticSuccess, openTelegramLink, sendReminderMock } from "../../lib/telegram";
+import { hapticError, hapticImpact, hapticSelection, hapticSuccess, openTelegramLink, sendReminderMock } from "../../lib/telegram";
+import checklistIconUrl from "../../assets/fup/checklist.svg";
+import fupLogoUrl from "../../assets/fup/logo.svg";
+import personIconUrl from "../../assets/fup/person-2.svg";
+import squareGridIconUrl from "../../assets/fup/square-grid.svg";
+import starBackgroundUrl from "../../assets/fup/star-background.svg";
 import { AppleSwitch } from "../ui/AppleSwitch";
 import { ConnectionBadge } from "../ui/Badge";
 import { Button } from "../ui/Button";
 import { Card } from "../ui/Card";
 import { Field, SelectInput, TextArea, TextInput } from "../ui/Field";
-import { MetricCard } from "../ui/MetricCard";
 import { SegmentedControl } from "../ui/SegmentedControl";
 
 type ParticipantView = "today" | "people" | "save" | "followups" | "profile";
@@ -65,6 +69,13 @@ const formatDate = (value?: string) =>
   value
     ? new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(value))
     : "Не задано";
+const formatMeetingDate = (value?: string) => {
+  if (!value) return "Недавно";
+  const date = new Date(value);
+  const today = new Date();
+  if (date.toDateString() === today.toDateString()) return "Сегодня";
+  return new Intl.DateTimeFormat("ru-RU", { day: "2-digit", month: "2-digit", year: "2-digit" }).format(date);
+};
 
 const remindAtFromDays = (days: number) => {
   const date = new Date();
@@ -86,8 +97,17 @@ const usernameOf = (user: AnyRecord = {}) => user.telegram_username || user.user
 const contactName = (contact: AnyRecord = {}) => contact.contact_name || "Контакт";
 const contactStep = (contact: AnyRecord = {}) => contact.next_step_text || contact.next_step || "Написать";
 const contactUsername = (contact: AnyRecord = {}) => contact.contact_username || "";
+const contactPlace = (contact: AnyRecord = {}) => contact.where_met || "На мероприятии";
 const followUpDate = (followUp: AnyRecord = {}) => followUp.remind_at || followUp.due_at;
 const followUpContact = (followUp: AnyRecord = {}) => followUp.contact || followUp.contacts || {};
+const positiveGoal = (value: unknown) => {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) && numeric > 0 ? numeric : 0;
+};
+const metricCount = (value: unknown) => {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) && numeric >= 0 ? numeric : undefined;
+};
 
 export function ParticipantApp() {
   const [view, setView] = useState<ParticipantView>("today");
@@ -103,6 +123,7 @@ export function ParticipantApp() {
   const pendingRef = useRef(new Set<string>());
 
   const notify = (message: string, kind: ToastKind = "success") => {
+    if (kind === "error") hapticError();
     setToast({ message, kind });
     window.setTimeout(() => setToast(null), 2400);
   };
@@ -168,12 +189,28 @@ export function ParticipantApp() {
   }, []);
 
   return (
-    <section className="mx-auto h-[100dvh] w-full max-w-[430px] overflow-hidden bg-[linear-gradient(180deg,rgba(255,255,255,0.82),rgba(240,248,255,0.72))] shadow-[0_24px_70px_rgba(29,29,31,0.10)] backdrop-blur-3xl sm:my-5 sm:h-[min(860px,calc(100dvh-40px))] sm:rounded-[34px] sm:border sm:border-white/70">
+    <section
+      className="mx-auto h-[100dvh] w-full max-w-[430px] overflow-hidden bg-[linear-gradient(180deg,rgba(255,255,255,0.90),rgba(245,250,255,0.78))] shadow-[0_24px_70px_rgba(29,29,31,0.10)] backdrop-blur-3xl sm:my-5 sm:h-[min(860px,calc(100dvh-40px))] sm:rounded-[34px] sm:border sm:border-white/70"
+      onChangeCapture={(event) => {
+        const target = event.target;
+        if (target instanceof HTMLSelectElement || (target instanceof HTMLInputElement && ["checkbox", "radio", "range"].includes(target.type))) {
+          hapticSelection();
+        }
+      }}
+      onPointerDownCapture={(event) => {
+        const target = event.target;
+        if (!(target instanceof Element)) return;
+        const control = target.closest("button, a, [role='button'], [role='switch']");
+        if (!control || control.matches(":disabled") || control.getAttribute("aria-disabled") === "true") return;
+        hapticImpact(control.getAttribute("aria-label") === "Добавить контакт" ? "soft" : "light");
+      }}
+    >
       <div className="relative flex h-full flex-col overflow-hidden">
-        <div className="apple-scroll no-scrollbar relative z-10 flex-1 overflow-y-auto px-4 pb-32 pt-[max(18px,env(safe-area-inset-top))]">
+        <HomeBackdrop />
+        <div className="apple-scroll fup-safe-scroll no-scrollbar relative z-10 flex-1 overflow-y-auto px-4">
           {loading ? <LoadingScreen /> : null}
           {!loading && !event && view !== "profile" ? <JoinEventScreen actions={actions} onProfile={() => setView("profile")} /> : null}
-          {!loading && event && view === "today" ? <TodayScreen me={me} event={event} home={home} contacts={contacts} followUps={followUps} onSave={() => setView("save")} onProfile={() => setView("profile")} /> : null}
+          {!loading && event && view === "today" ? <TodayScreen me={me} event={event} home={home} contacts={contacts} members={members} onContacts={() => setView("people")} onProfile={() => setView("profile")} /> : null}
           {!loading && event && view === "people" ? <PeopleScreen event={event} members={members} me={me} actions={actions} /> : null}
           {!loading && event && view === "save" ? <SaveScreen event={event} members={members} me={me} actions={actions} /> : null}
           {!loading && event && view === "followups" ? <FollowUpsScreen followUps={followUps} actions={actions} /> : null}
@@ -188,38 +225,49 @@ export function ParticipantApp() {
 
 function BottomNav({ view, setView }: { view: ParticipantView; setView: (view: ParticipantView) => void }) {
   const nav = [
-    { id: "today" as const, label: "Сегодня", icon: Home },
-    { id: "people" as const, label: "Люди", icon: Users },
-    { id: "save" as const, label: "Сохранить", icon: Plus },
-    { id: "followups" as const, label: "Напоминания", icon: Bell },
+    { id: "today" as const, label: "Главная", iconUrl: squareGridIconUrl },
+    { id: "people" as const, label: "Контакты", iconUrl: personIconUrl },
+    { id: "followups" as const, label: "Задачи", iconUrl: checklistIconUrl },
   ];
 
   return (
-    <nav className="liquid-control absolute inset-x-4 bottom-[max(14px,env(safe-area-inset-bottom))] z-20 grid grid-cols-4 gap-1 rounded-[28px] p-1.5">
-      {nav.map((item) => {
-        const Icon = item.icon;
-        const active = view === item.id;
-        return (
-          <button
-            key={item.id}
-            onClick={() => setView(item.id)}
-            className={`button-press flex min-h-[54px] flex-col items-center justify-center gap-1 rounded-[23px] px-2 text-[10px] font-semibold transition ${
-              active ? "bg-white/90 text-[#0066cc] shadow-[0_5px_16px_rgba(29,29,31,0.08)]" : "text-slate-500 hover:bg-white/40"
-            }`}
-          >
-            <Icon size={17} />
-            {item.label}
-          </button>
-        );
-      })}
-    </nav>
+    <div className="fup-bottom-dock absolute inset-x-4 z-20 flex items-end gap-3">
+      <nav className="fup-bottom-nav grid min-w-0 flex-1 grid-cols-3 gap-1 rounded-[30px] p-1">
+        {nav.map((item) => {
+          const active = view === item.id;
+          return (
+            <button
+              key={item.id}
+              onClick={() => setView(item.id)}
+              className={`button-press fup-tab flex min-h-[52px] flex-col items-center justify-center gap-1 rounded-[24px] px-1 text-[11px] font-semibold transition ${
+                active ? "is-active text-[#0087ff]" : "text-[#171717] hover:bg-white/38"
+              }`}
+            >
+              <NavIcon url={item.iconUrl} />
+              {item.label}
+            </button>
+          );
+        })}
+      </nav>
+      <button
+        aria-label="Добавить контакт"
+        className={`button-press fup-add-button flex size-[64px] shrink-0 items-center justify-center rounded-full text-[#0087ff] ${view === "save" ? "is-active" : ""}`}
+        onClick={() => setView("save")}
+      >
+        <Plus size={33} strokeWidth={2.2} />
+      </button>
+    </div>
   );
+}
+
+function NavIcon({ url }: { url: string }) {
+  return <img aria-hidden alt="" className="fup-nav-icon" src={url} />;
 }
 
 function Toast({ toast }: { toast: ToastState }) {
   if (!toast) return null;
   return (
-    <div className="pointer-events-none absolute inset-x-4 top-[max(18px,env(safe-area-inset-top))] z-40 flex justify-center">
+    <div className="fup-toast-safe pointer-events-none absolute inset-x-4 z-40 flex justify-center">
       <div className={`glass animate-[shelfIn_260ms_ease_both] rounded-full px-4 py-3 text-center text-[14px] font-semibold shadow-[0_16px_42px_rgba(29,29,31,0.12)] ${toast.kind === "error" ? "text-rose-500" : "text-[#1d1d1f]"}`}>
         {toast.message}
       </div>
@@ -322,10 +370,10 @@ function JoinEventScreen({ actions, onProfile }: { actions: AppActions; onProfil
 
 function Shelf({ title, subtitle, children, className = "" }: { title: string; subtitle?: string; children: ReactNode; className?: string }) {
   return (
-    <section className={`glass rounded-[28px] p-4 ${className}`}>
-      <div className="mb-3 flex items-end justify-between gap-3">
+    <section className={`fup-panel rounded-[34px] p-4 ${className}`}>
+      <div className="mb-4 flex items-end justify-between gap-3">
         <div>
-          <h3 className="text-[17px] font-semibold text-[#1d1d1f]">{title}</h3>
+          <h3 className="text-[18px] font-semibold leading-tight text-black">{title}</h3>
           {subtitle ? <p className="mt-1 text-[13px] leading-5 text-slate-500">{subtitle}</p> : null}
         </div>
         <div className="h-px flex-1 bg-gradient-to-r from-slate-200/70 to-transparent" />
@@ -335,66 +383,183 @@ function Shelf({ title, subtitle, children, className = "" }: { title: string; s
   );
 }
 
+function ParticipantHeader({ kicker, title, description }: { kicker?: string; title: string; description?: string }) {
+  return (
+    <header className="fup-screen-header px-2 pt-1">
+      {kicker ? <p className="text-[12px] font-semibold uppercase text-[#0072fc]">{kicker}</p> : null}
+      <h1 className="fup-display mt-2 text-[27px] leading-[1.1] text-black">{title}</h1>
+      {description ? <p className="mt-3 text-[14px] leading-6 text-[#5f6873]">{description}</p> : null}
+    </header>
+  );
+}
+
+function EmptyGlassState({ children }: { children: ReactNode }) {
+  return <p className="fup-empty rounded-[26px] px-4 py-5 text-[13px] leading-5 text-[#6b7480]">{children}</p>;
+}
+
+function HomeBackdrop() {
+  return (
+    <div aria-hidden className="pointer-events-none absolute inset-0 z-0 overflow-hidden bg-white">
+      <img className="fup-home-star fup-home-star-top" src={starBackgroundUrl} alt="" />
+      <img className="fup-home-star fup-home-star-left" src={starBackgroundUrl} alt="" />
+      <img className="fup-home-star fup-home-star-right" src={starBackgroundUrl} alt="" />
+      <img className="fup-home-star fup-home-star-bottom" src={starBackgroundUrl} alt="" />
+      <div className="fup-home-haze" />
+    </div>
+  );
+}
+
 function TodayScreen({
   me,
   event,
   home,
   contacts,
-  followUps,
-  onSave,
+  members,
+  onContacts,
   onProfile,
 }: {
   me: AnyRecord | null;
   event: AnyRecord | null;
   home: AnyRecord | null;
   contacts: AnyRecord[];
-  followUps: AnyRecord[];
-  onSave: () => void;
+  members: AnyRecord[];
+  onContacts: () => void;
   onProfile: () => void;
 }) {
   const stats = home?.stats || {};
-  const activeFollowUps = followUps.filter((item) => ["scheduled", "reminder_sent", "snoozed"].includes(item.status));
+  const recentContacts: AnyRecord[] = (home?.latestContacts?.length ? home.latestContacts : contacts).slice(0, 2);
+  const latestAvatars: AnyRecord[] = contacts.slice(0, 3);
+  const savedContacts = metricCount(stats.saved_contacts) ?? contacts.length;
+  const eventData = home?.event || event || {};
+  const contactGoal = positiveGoal(eventData.goal_contacts_per_user) || 3;
+  const goalChecks = [
+    { target: contactGoal, current: savedContacts },
+    { target: positiveGoal(eventData.goal_messages_per_user), current: positiveGoal(stats.completed_followups) },
+    { target: positiveGoal(eventData.goal_results_per_user), current: positiveGoal(stats.results) },
+  ].filter((goal) => goal.target > 0);
+  const inferredTotalGoals = (Array.isArray(eventData.goals) ? eventData.goals.length : 0) || goalChecks.length || 3;
+  const totalGoals = metricCount(stats.total_active_event_goals) ?? inferredTotalGoals;
+  const inferredCompletedGoals = goalChecks.filter((goal) => goal.current >= goal.target).length || positiveGoal(stats.completed_followups);
+  const completedGoals = Math.min(
+    totalGoals,
+    metricCount(stats.completed_event_goals) ?? inferredCompletedGoals,
+  );
+  const publicName = me?.user?.public_name || me?.user?.first_name || me?.user?.telegram_first_name || "";
 
   return (
-    <div className="space-y-5 py-2">
-      <header className="pt-2">
-        <div className="flex items-center justify-between">
-          <div className="liquid-blue flex size-12 items-center justify-center rounded-[16px] text-lg font-semibold text-white">F</div>
-          <button className="button-press liquid-control flex items-center gap-2 rounded-full px-2.5 py-2 text-[12px] font-semibold text-[#0066cc]" onClick={onProfile}>
-            <Avatar user={me?.user} size="sm" /> Профиль
+    <div className="fup-home space-y-6 pb-3 pt-2">
+      <header className="animate-[shelfIn_360ms_ease_both] px-2 pt-1">
+        <div className="flex items-center justify-between gap-4">
+          <img src={fupLogoUrl} alt="FUP" className="h-[42px] w-auto" />
+          <button aria-label="Открыть профиль" className="button-press rounded-full" onClick={onProfile}>
+            <RoundAvatar user={me?.user} label={publicName || fullName(me?.user || {})} className="size-[74px]" />
           </button>
         </div>
-        <p className="mt-8 text-[14px] font-medium text-slate-500">Привет, {firstName(me?.user)}</p>
-        <h1 className="mt-2 text-[36px] font-semibold leading-[1.04] text-[#1d1d1f]">Разложим новые знакомства по полочкам</h1>
-        <p className="mt-4 text-[16px] leading-7 text-slate-600">
-          {event ? `${event.name}: сохраните контакт, поставьте напоминание и вернитесь к человеку вовремя.` : "Пока вы не подключены к мероприятию. Откройте invite-ссылку или QR организатора."}
-        </p>
-        <Button className="mt-5 w-full py-4 text-[17px]" onClick={onSave} disabled={!event}>
-          <Plus size={19} /> Сохранить знакомство
-        </Button>
+        <h1 className="fup-display mt-8 text-[27px] leading-[1.08] text-black">
+          {publicName ? `Привет, ${publicName}!` : "Привет!"}
+        </h1>
       </header>
 
-      <div className="grid grid-cols-2 gap-3">
-        <MetricCard label="Сохранено" value={stats.saved_contacts || contacts.length} icon={<Users size={18} />} />
-        <MetricCard label="Напоминания" value={stats.upcoming_reminders || activeFollowUps.length} icon={<Bell size={18} />} />
-        <MetricCard label="Выполнено" value={stats.completed_followups || 0} icon={<Check size={18} />} />
-        <MetricCard label="Результаты" value={stats.results || 0} icon={<MessageCircle size={18} />} />
-      </div>
-
-      <Shelf title="Сегодня на полке" subtitle="Не забудьте вернуться к важным людям">
-        <div className="space-y-3">
-          {activeFollowUps.slice(0, 3).map((followUp) => <FollowUpPreview key={followUp.id} followUp={followUp} />)}
-          {!activeFollowUps.length ? <p className="rounded-[20px] bg-white/42 p-4 text-[13px] leading-5 text-slate-500">На сегодня ничего не горит. Можно спокойно сохранить новые знакомства.</p> : null}
+      <section className="fup-progress-shell animate-[shelfIn_460ms_ease_both] rounded-[38px] p-4">
+        <div className="grid grid-cols-2 gap-3">
+          <HomeProgressCard label="Сохранено" value={`${savedContacts} / ${contactGoal}`}>
+            <div className="mt-auto flex min-h-12 items-end justify-end">
+              <div className="flex items-center pr-1">
+                {latestAvatars.map((contact, index) => (
+                  <RoundAvatar
+                    key={contact.id || `${contactName(contact)}-${index}`}
+                    user={contactUser(contact, members)}
+                    label={contactName(contact)}
+                    className={`size-11 border-2 border-white/70 ${index ? "-ml-3" : ""}`}
+                  />
+                ))}
+              </div>
+            </div>
+          </HomeProgressCard>
+          <HomeProgressCard label="Выполнено" value={`${completedGoals} / ${totalGoals}`} />
         </div>
-      </Shelf>
+      </section>
 
-      <Shelf title="Последние знакомства">
-        <div className="space-y-3">
-          {contacts.slice(0, 4).map((contact) => <ContactCard key={contact.id} contact={contact} />)}
-          {!contacts.length ? <p className="rounded-[20px] bg-white/38 p-4 text-[13px] text-slate-500">Здесь появятся сохраненные знакомства.</p> : null}
+      <section className="space-y-3 animate-[shelfIn_560ms_ease_both]">
+        <h2 className="fup-display px-2 text-[27px] leading-[1.1] text-black">Последние встречи</h2>
+        <div className="fup-meetings-shell rounded-[38px] p-3">
+          <div className="space-y-3">
+            {recentContacts.map((contact) => <RecentMeetingCard key={contact.id} contact={contact} user={contactUser(contact, members)} />)}
+            {!recentContacts.length ? (
+              <div className="fup-meeting-card rounded-[32px] px-5 py-8 text-center text-[14px] leading-6 text-[#6f7780]">
+                Здесь появятся последние сохраненные встречи.
+              </div>
+            ) : null}
+          </div>
+          <button className="button-press mt-3 w-full rounded-[26px] py-4 text-[16px] font-medium text-[#7b848e] transition hover:bg-white/38" onClick={onContacts}>
+            Открыть еще
+          </button>
         </div>
-      </Shelf>
+      </section>
     </div>
+  );
+}
+
+function HomeProgressCard({ label, value, children }: { label: string; value: string; children?: ReactNode }) {
+  return (
+    <div className="fup-progress-card flex min-h-[136px] flex-col rounded-[29px] p-4">
+      <p className="text-[15px] font-medium text-black">{label}</p>
+      <p className="mt-2 text-[33px] font-bold leading-none tracking-[0] text-black">{value}</p>
+      {children}
+    </div>
+  );
+}
+
+function contactUser(contact: AnyRecord, members: AnyRecord[]) {
+  return members.find((member) => member.id === contact.target_user_id) || contact.target_user || contact.user;
+}
+
+function RoundAvatar({ user, label, className = "size-12" }: { user?: AnyRecord; label?: string; className?: string }) {
+  const name = label || fullName(user || {});
+  const avatarUrl = user?.avatar_url || user?.telegram_photo_url || user?.photo_url;
+  const initials = name
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part: string) => part[0])
+    .join("")
+    .toUpperCase();
+
+  if (avatarUrl) {
+    return <img src={avatarUrl} alt={name} className={`${className} rounded-full object-cover shadow-[0_12px_30px_rgba(23,45,68,0.14)]`} />;
+  }
+
+  return (
+    <span className={`${className} fup-avatar-fallback flex shrink-0 items-center justify-center rounded-full text-[13px] font-semibold text-[#0072fc]`}>
+      {initials || "F"}
+    </span>
+  );
+}
+
+function RecentMeetingCard({ contact, user }: { contact: AnyRecord; user?: AnyRecord }) {
+  const username = contactUsername(contact) || usernameOf(user || {});
+  return (
+    <article className="button-press fup-meeting-card rounded-[32px] p-5">
+      <div className="flex items-start gap-3">
+        <RoundAvatar user={user} label={contactName(contact)} className="size-[72px]" />
+        <div className="min-w-0 flex-1 pt-1">
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0">
+              <h3 className="truncate text-[24px] font-bold leading-none text-black">{contactName(contact)}</h3>
+              {username ? <p className="mt-2 truncate text-[16px] font-medium text-[#0087ff]">@{username.replace(/^@/, "")}</p> : null}
+            </div>
+            <time className="shrink-0 pt-0.5 text-[12px] font-medium text-[#838b94]">{formatMeetingDate(contact.created_at)}</time>
+          </div>
+        </div>
+      </div>
+      <div className="mt-5 flex flex-wrap items-center justify-between gap-2">
+        <p className="text-[18px] font-bold leading-tight text-black">{contactPlace(contact)}</p>
+      </div>
+      <p className="mt-2 line-clamp-3 text-[15px] leading-[1.18] text-black">{contact.context || "Контекст знакомства пока не добавлен."}</p>
+      <div className="fup-meeting-action mt-4 inline-flex h-11 max-w-full items-center justify-center rounded-full bg-[#0087ff] px-4 text-[13px] font-medium text-white shadow-[0_10px_24px_rgba(0,135,255,0.24)]">
+        <span className="truncate text-center">{contactStep(contact)}</span>
+      </div>
+    </article>
   );
 }
 
@@ -415,7 +580,7 @@ function PeopleScreen({ event, members, me, actions }: { event: AnyRecord | null
 
   if (!event) {
     return (
-      <div className="space-y-5 py-2">
+      <div className="fup-screen space-y-5 py-2">
         <Card className="p-6 text-center">
           <h1 className="text-2xl font-semibold">Нет активного мероприятия</h1>
           <p className="mt-3 text-[14px] leading-6 text-slate-500">Каталог появится после подключения к мероприятию по QR или invite-ссылке.</p>
@@ -425,39 +590,39 @@ function PeopleScreen({ event, members, me, actions }: { event: AnyRecord | null
   }
 
   return (
-    <div className="space-y-5 py-2">
-      <header>
-        <p className="text-[13px] font-semibold uppercase text-[#0066cc]">Участники</p>
-        <h1 className="mt-2 text-[34px] font-semibold leading-tight">Люди на мероприятии</h1>
-        <p className="mt-3 text-[15px] leading-6 text-slate-600">Смотрите анкеты участников и сохраняйте тех, к кому важно вернуться после события.</p>
-      </header>
-      <div className="liquid-control flex items-center gap-2 rounded-[24px] px-4 py-3">
+    <div className="fup-screen space-y-4 py-2">
+      <ParticipantHeader
+        kicker="Контакты"
+        title="Люди на событии"
+        description="Смотрите анкеты участников и сохраняйте тех, к кому важно вернуться после встречи."
+      />
+      <div className="fup-control flex h-14 items-center gap-2 rounded-[28px] px-4">
         <Search size={18} className="text-slate-400" />
         <input
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Поиск по роли, компании или запросу"
-          className="w-full bg-transparent text-[15px] outline-none placeholder:text-slate-400"
+          className="w-full bg-transparent text-[14px] outline-none placeholder:text-slate-400"
         />
       </div>
       <div className="space-y-3">
         {visibleMembers.map((member) => {
           const key = `people-save-${member.id}`;
           return (
-            <Card key={member.id} soft className="p-4">
+            <article key={member.id} className="fup-card rounded-[32px] p-4">
               <div className="flex items-start gap-3">
-                <Avatar user={member} />
+                <RoundAvatar user={member} label={fullName(member)} className="size-14" />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="truncate font-semibold text-[#1d1d1f]">{fullName(member)}</p>
+                      <p className="truncate text-[17px] font-semibold text-black">{fullName(member)}</p>
                       <p className="mt-1 text-[13px] text-slate-500">{roleToRu[member.role] || member.role || "Участник"}{member.company ? ` · ${member.company}` : ""}</p>
                     </div>
                     <ConnectionBadge type="internal" />
                   </div>
                   <div className="mt-3 grid gap-2">
-                    <p className="rounded-[18px] bg-white/48 px-3 py-2 text-[13px] leading-5 text-slate-600">Ищет: {member.looking_for || "Не указано"}</p>
-                    <p className="rounded-[18px] bg-white/48 px-3 py-2 text-[13px] leading-5 text-slate-600">Может помочь: {member.can_help_with || "Не указано"}</p>
+                    <p className="fup-subpanel rounded-[20px] px-3 py-2 text-[13px] leading-5 text-slate-600">Ищет: {member.looking_for || "Не указано"}</p>
+                    <p className="fup-subpanel rounded-[20px] px-3 py-2 text-[13px] leading-5 text-slate-600">Может помочь: {member.can_help_with || "Не указано"}</p>
                   </div>
                   <Button
                     className="mt-4 w-full"
@@ -489,42 +654,10 @@ function PeopleScreen({ event, members, me, actions }: { event: AnyRecord | null
                   </Button>
                 </div>
               </div>
-            </Card>
+            </article>
           );
         })}
-        {!visibleMembers.length ? <p className="rounded-[20px] bg-white/38 p-4 text-[13px] text-slate-500">Подходящих участников пока нет.</p> : null}
-      </div>
-    </div>
-  );
-}
-
-function ContactCard({ contact }: { contact: AnyRecord }) {
-  return (
-    <div className="button-press rounded-[22px] border border-white/60 bg-white/48 p-4 shadow-[0_8px_24px_rgba(29,29,31,0.05)] transition hover:-translate-y-0.5 hover:bg-white/66">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="font-semibold text-[#1d1d1f]">{contactName(contact)}</p>
-          {contactUsername(contact) ? <p className="mt-1 text-[13px] text-[#0066cc]">@{contactUsername(contact)}</p> : null}
-        </div>
-        <ConnectionBadge type={contact.connection_type || "manual"} />
-      </div>
-      <p className="mt-3 line-clamp-2 text-[13px] leading-5 text-slate-600">{contact.context}</p>
-      <p className="mt-3 text-[12px] font-semibold text-slate-500">Следующий шаг: {contactStep(contact)}</p>
-    </div>
-  );
-}
-
-function FollowUpPreview({ followUp }: { followUp: AnyRecord }) {
-  const contact = followUpContact(followUp);
-  if (!contact?.id) return null;
-  return (
-    <div className="rounded-[22px] border border-white/60 bg-white/50 p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="font-semibold text-[#1d1d1f]">{contactName(contact)}</p>
-          <p className="mt-1 text-[13px] text-slate-500">{contactStep(contact)}</p>
-        </div>
-        <span className="rounded-full bg-[#0066cc]/10 px-3 py-1 text-[11px] font-semibold text-[#0066cc]">{formatDate(followUpDate(followUp))}</span>
+        {!visibleMembers.length ? <EmptyGlassState>Подходящих участников пока нет.</EmptyGlassState> : null}
       </div>
     </div>
   );
@@ -536,7 +669,7 @@ function SaveScreen({ event, members, me, actions }: { event: AnyRecord | null; 
 
   if (!event) {
     return (
-      <div className="space-y-5 py-2">
+      <div className="fup-screen space-y-5 py-2">
         <Card className="p-6 text-center">
           <h1 className="text-2xl font-semibold">Нет активного мероприятия</h1>
           <p className="mt-3 text-[14px] leading-6 text-slate-500">Чтобы сохранять знакомства, откройте invite-ссылку или QR от организатора.</p>
@@ -546,14 +679,19 @@ function SaveScreen({ event, members, me, actions }: { event: AnyRecord | null; 
   }
 
   return (
-    <div className="space-y-5 py-2">
-      <header>
-        <p className="text-[13px] font-semibold uppercase text-[#0066cc]">Сохранить</p>
-        <h1 className="mt-2 text-[34px] font-semibold leading-tight">Новая карточка знакомства</h1>
-        <p className="mt-3 text-[15px] leading-6 text-slate-600">Быстро положим контакт, контекст и следующий шаг на свои полочки.</p>
-      </header>
+    <div className="fup-screen space-y-4 py-2">
+      <ParticipantHeader
+        kicker="Новый контакт"
+        title="Добавить встречу"
+        description="Сохраните человека, контекст разговора и следующий шаг в одной карточке."
+      />
 
-      <SegmentedControl value={mode} onChange={setMode} options={[{ value: "manual", label: "Добавить вручную" }, { value: "program", label: "Из участников" }]} />
+      <SegmentedControl
+        value={mode}
+        onChange={setMode}
+        className="fup-control"
+        options={[{ value: "manual", label: "Вручную" }, { value: "program", label: "Из участников" }]}
+      />
 
       {mode === "manual" ? <ManualSaveForm event={event} actions={actions} onSaved={setSaved} /> : <ProgramMemberPicker event={event} members={members} me={me} actions={actions} onSaved={setSaved} />}
 
@@ -606,7 +744,7 @@ function ManualSaveForm({ event, actions, onSaved }: { event: AnyRecord; actions
 
   if (success) {
     return (
-      <Card className="animate-[shelfIn_480ms_ease_both] p-6 text-center">
+      <div className="fup-panel animate-[shelfIn_480ms_ease_both] rounded-[34px] p-6 text-center">
         <div className="mx-auto flex size-14 items-center justify-center rounded-[22px] bg-emerald-500 text-white shadow-[0_14px_30px_rgba(52,199,89,0.24)]">
           <Check size={28} />
         </div>
@@ -615,7 +753,7 @@ function ManualSaveForm({ event, actions, onSaved }: { event: AnyRecord; actions
         <Button className="mt-5 w-full" variant="secondary" onClick={() => setSuccess(false)}>
           Сохранить еще одно
         </Button>
-      </Card>
+      </div>
     );
   }
 
@@ -657,11 +795,14 @@ function ProgramMemberPicker({ event, members, me, actions, onSaved }: { event: 
         {visibleMembers.slice(0, 4).map((member) => {
           const key = `save-member-${member.id}`;
           return (
-            <div key={member.id} className="rounded-[22px] border border-white/60 bg-white/48 p-4">
+            <div key={member.id} className="fup-card rounded-[28px] p-4">
               <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="font-semibold">{fullName(member)}</p>
-                  <p className="mt-1 text-[13px] text-slate-500">{roleToRu[member.role] || member.role || "Участник"} · {member.company || member.field || "FUP"}</p>
+                <div className="flex min-w-0 items-start gap-3">
+                  <RoundAvatar user={member} label={fullName(member)} className="size-12" />
+                  <div className="min-w-0">
+                    <p className="truncate font-semibold">{fullName(member)}</p>
+                    <p className="mt-1 text-[13px] text-slate-500">{roleToRu[member.role] || member.role || "Участник"} · {member.company || member.field || "FUP"}</p>
+                  </div>
                 </div>
                 <ConnectionBadge type="internal" />
               </div>
@@ -698,7 +839,7 @@ function ProgramMemberPicker({ event, members, me, actions, onSaved }: { event: 
             </div>
           );
         })}
-        {!visibleMembers.length ? <p className="rounded-[20px] bg-white/38 p-4 text-[13px] text-slate-500">В каталоге пока нет других участников.</p> : null}
+        {!visibleMembers.length ? <EmptyGlassState>В каталоге пока нет других участников.</EmptyGlassState> : null}
       </div>
     </Shelf>
   );
@@ -713,16 +854,16 @@ function ReminderModal({ followUp, contact, actions, onClose }: { followUp: AnyR
   };
 
   return (
-    <div className="fixed inset-0 z-30 flex items-end justify-center bg-slate-900/18 p-4 backdrop-blur-sm">
-      <Card className="w-full max-w-[398px] animate-[shelfIn_420ms_ease_both] p-5">
+    <div className="fixed inset-0 z-30 flex items-end justify-center bg-slate-900/18 p-4 pb-[max(16px,var(--tg-content-safe-area-inset-bottom,0px))] backdrop-blur-sm">
+      <div className="fup-panel w-full max-w-[398px] animate-[shelfIn_420ms_ease_both] rounded-[36px] p-5">
         <div className="mb-4 flex items-start justify-between gap-3">
           <div>
             <p className="text-[13px] font-semibold text-[#0066cc]">Напоминание в Telegram</p>
             <h3 className="mt-1 text-2xl font-semibold">Как будет выглядеть напоминание</h3>
           </div>
-          <button className="liquid-control size-9 rounded-full text-slate-500" onClick={onClose}>×</button>
+          <button aria-label="Закрыть" className="fup-control button-press flex size-10 shrink-0 items-center justify-center rounded-full text-[20px] text-slate-500" onClick={onClose}>x</button>
         </div>
-        <div className="rounded-[24px] border border-white/60 bg-white/58 p-4 text-[14px] leading-6 text-slate-700">{sendReminderMock(contact as any, { ...followUp, remind_at: followUpDate(followUp) } as any)}</div>
+        <div className="fup-subpanel rounded-[24px] p-4 text-[14px] leading-6 text-slate-700">{sendReminderMock(contact as any, { ...followUp, remind_at: followUpDate(followUp) } as any)}</div>
         <Button className="mt-4 w-full" variant="secondary" onClick={() => actions.notify("Напоминание создано")}>
           <Bell size={17} /> Готово
         </Button>
@@ -741,7 +882,7 @@ function ReminderModal({ followUp, contact, actions, onClose }: { followUp: AnyR
             Отложить
           </Button>
         </div>
-      </Card>
+      </div>
     </div>
   );
 }
@@ -756,16 +897,16 @@ function FollowUpsScreen({ followUps, actions }: { followUps: AnyRecord[]; actio
   ];
 
   return (
-    <div className="space-y-5 py-2">
-      <header>
-        <p className="text-[13px] font-semibold uppercase text-[#0066cc]">Следующие шаги</p>
-        <h1 className="mt-2 text-[34px] font-semibold">Напоминания</h1>
-        <p className="mt-3 text-[15px] leading-6 text-slate-600">Напоминание — это только сигнал. Выполненным follow-up становится после “Я написал”.</p>
-      </header>
+    <div className="fup-screen space-y-4 py-2">
+      <ParticipantHeader
+        kicker="Задачи"
+        title="Следующие шаги"
+        description="Здесь лежат напоминания и действия по встречам, которые еще нужно довести до результата."
+      />
       {groups.map((group) => (
         <Shelf key={group.title} title={group.title}>
           <div className="space-y-3">
-            {group.items.length ? group.items.map((item) => <FollowUpCard key={item.id} followUp={item} actions={actions} onPreview={() => setPreview(item)} />) : <p className="rounded-[20px] bg-white/38 p-4 text-[13px] text-slate-500">Эта полка пока пустая.</p>}
+            {group.items.length ? group.items.map((item) => <FollowUpCard key={item.id} followUp={item} actions={actions} onPreview={() => setPreview(item)} />) : <EmptyGlassState>Эта полка пока пустая.</EmptyGlassState>}
           </div>
         </Shelf>
       ))}
@@ -785,17 +926,17 @@ function FollowUpCard({ followUp, actions, onPreview }: { followUp: AnyRecord; a
   };
 
   return (
-    <div className="rounded-[24px] border border-white/60 bg-white/52 p-4 shadow-[0_12px_34px_rgba(29,29,31,0.06)]">
+    <div className="fup-card rounded-[30px] p-4">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="font-semibold text-[#1d1d1f]">{contactName(contact)}</p>
+          <p className="text-[17px] font-semibold text-black">{contactName(contact)}</p>
           <p className="mt-1 text-[13px] text-slate-500">{formatDate(followUpDate(followUp))}</p>
         </div>
-        <span className="rounded-full bg-white/70 px-3 py-1 text-[11px] font-semibold text-slate-500">{statusLabel[followUp.status] || followUp.status}</span>
+        <span className="fup-subpanel rounded-full px-3 py-1 text-[11px] font-semibold text-slate-500">{statusLabel[followUp.status] || followUp.status}</span>
       </div>
       <p className="mt-3 text-[13px] leading-5 text-slate-600">{contact.context}</p>
       <p className="mt-3 text-[13px] font-semibold text-[#1d1d1f]">Следующий шаг: {contactStep(contact)}</p>
-      <div className="mt-4 grid grid-cols-2 gap-2">
+      <div className="fup-action-grid mt-4 grid grid-cols-2 gap-2">
         {contactUsername(contact) ? (
           <Button
             variant="secondary"
@@ -869,12 +1010,19 @@ function ProfileScreen({ me, actions, pendingVersion }: { me: AnyRecord | null; 
   };
 
   return (
-    <div className="space-y-5 py-2">
-      <header>
-        <p className="text-[13px] font-semibold uppercase text-[#0066cc]">Профиль</p>
-        <h1 className="mt-2 text-[34px] font-semibold">Видимость в программе</h1>
-        <p className="mt-3 text-[15px] leading-6 text-slate-600">Контакты можно сохранять сразу. Профиль нужен только чтобы другие участники могли найти вас.</p>
-      </header>
+    <div className="fup-screen space-y-4 py-2">
+      <ParticipantHeader
+        kicker="Профиль"
+        title="Ваша карточка"
+        description="Заполните профиль, чтобы другие участники могли найти вас в каталоге события."
+      />
+      <div className="fup-panel flex items-center gap-4 rounded-[34px] p-4">
+        <RoundAvatar user={user} label={name} className="size-[68px]" />
+        <div className="min-w-0">
+          <p className="truncate text-[18px] font-semibold text-black">{name || "Участник FUP"}</p>
+          <p className="mt-1 text-[13px] leading-5 text-slate-500">{role}{company ? ` · ${company}` : ""}</p>
+        </div>
+      </div>
       <Shelf title="Базовая карточка">
         <div className="space-y-3">
           <Field label="Имя и фамилия"><TextInput value={name} onChange={(event) => setName(event.target.value)} /></Field>
@@ -886,7 +1034,7 @@ function ProfileScreen({ me, actions, pendingVersion }: { me: AnyRecord | null; 
         <div className="space-y-3">
           <Field label="Кого ищу"><TextArea value={lookingFor} onChange={(event) => setLookingFor(event.target.value)} /></Field>
           <Field label="Чем могу помочь"><TextArea value={canHelpWith} onChange={(event) => setCanHelpWith(event.target.value)} /></Field>
-          <label className="flex items-center justify-between gap-4 rounded-[20px] bg-white/48 p-3">
+          <label className="fup-subpanel flex items-center justify-between gap-4 rounded-[24px] p-3">
             <span className="text-[14px] font-semibold text-slate-700">Показывать мой профиль участникам</span>
             <AppleSwitch checked={isVisible} onChange={setIsVisible} label="Показывать мой профиль участникам" />
           </label>
