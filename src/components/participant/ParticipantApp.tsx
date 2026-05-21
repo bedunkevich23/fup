@@ -15,7 +15,7 @@ import { Card } from "../ui/Card";
 import { Field, SelectInput, TextArea, TextInput } from "../ui/Field";
 import { SegmentedControl } from "../ui/SegmentedControl";
 
-type ParticipantView = "today" | "people" | "save" | "followups" | "profile";
+type ParticipantView = "today" | "people" | "save" | "followups" | "profile" | "contact";
 type SaveMode = "manual" | "program";
 type ToastKind = "success" | "error";
 type AnyRecord = Record<string, any>;
@@ -97,7 +97,16 @@ const usernameOf = (user: AnyRecord = {}) => user.telegram_username || user.user
 const contactName = (contact: AnyRecord = {}) => contact.contact_name || "Контакт";
 const contactStep = (contact: AnyRecord = {}) => contact.next_step_text || contact.next_step || "Написать";
 const contactUsername = (contact: AnyRecord = {}) => contact.contact_username || "";
-const contactPlace = (contact: AnyRecord = {}) => contact.where_met || "На мероприятии";
+const contactPlace = (contact: AnyRecord = {}) => contact.where_met === "Каталог участников" ? "Участник события" : contact.where_met || "На мероприятии";
+const cleanContactContext = (contact: AnyRecord = {}) =>
+  String(contact.context || "")
+    .replace(/^Каталог участников\.\s*/i, "")
+    .replace(/^Выбрано из списка участников программы\.?\s*/i, "")
+    .replace(/^Анкета участника\.\s*/i, "")
+    .replace(/\bИщет:\s*/gi, "")
+    .replace(/\bМожет помочь:\s*/gi, "\n")
+    .replace(/[ \t]+/g, " ")
+    .trim();
 const followUpDate = (followUp: AnyRecord = {}) => followUp.remind_at || followUp.due_at;
 const followUpContact = (followUp: AnyRecord = {}) => followUp.contact || followUp.contacts || {};
 const positiveGoal = (value: unknown) => {
@@ -119,6 +128,7 @@ export function ParticipantApp() {
   const [members, setMembers] = useState<AnyRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState<ToastState>(null);
+  const [selectedContact, setSelectedContact] = useState<AnyRecord | null>(null);
   const [pendingVersion, setPendingVersion] = useState(0);
   const pendingRef = useRef(new Set<string>());
 
@@ -209,14 +219,16 @@ export function ParticipantApp() {
         <HomeBackdrop />
         <div className="apple-scroll fup-safe-scroll no-scrollbar relative z-10 flex-1 overflow-y-auto px-4">
           {loading ? <LoadingScreen /> : null}
-          {!loading && !event && view !== "profile" ? <JoinEventScreen actions={actions} onProfile={() => setView("profile")} /> : null}
-          {!loading && event && view === "today" ? <TodayScreen me={me} event={event} home={home} contacts={contacts} members={members} onContacts={() => setView("people")} onProfile={() => setView("profile")} /> : null}
+          {!loading && !me?.profileCompleted ? <ProfileScreen me={me} actions={actions} pendingVersion={pendingVersion} required /> : null}
+          {!loading && me?.profileCompleted && !event && view !== "profile" ? <JoinEventScreen actions={actions} onProfile={() => setView("profile")} /> : null}
+          {!loading && me?.profileCompleted && event && view === "today" ? <TodayScreen me={me} event={event} home={home} contacts={contacts} members={members} onContacts={() => setView("people")} onProfile={() => setView("profile")} onContact={(contact) => { setSelectedContact(contact); setView("contact"); }} /> : null}
           {!loading && event && view === "people" ? <PeopleScreen event={event} members={members} me={me} actions={actions} /> : null}
           {!loading && event && view === "save" ? <SaveScreen event={event} members={members} me={me} actions={actions} /> : null}
           {!loading && event && view === "followups" ? <FollowUpsScreen followUps={followUps} actions={actions} /> : null}
           {!loading && view === "profile" ? <ProfileScreen me={me} actions={actions} pendingVersion={pendingVersion} /> : null}
+          {!loading && me?.profileCompleted && event && view === "contact" && selectedContact ? <ContactDetailScreen contact={selectedContact} members={members} followUps={followUps} actions={actions} onBack={() => setView("today")} /> : null}
         </div>
-        <BottomNav view={view} setView={setView} />
+        {me?.profileCompleted ? <BottomNav view={view} setView={setView} /> : null}
         <Toast toast={toast} />
       </div>
     </section>
@@ -417,6 +429,7 @@ function TodayScreen({
   members,
   onContacts,
   onProfile,
+  onContact,
 }: {
   me: AnyRecord | null;
   event: AnyRecord | null;
@@ -425,6 +438,7 @@ function TodayScreen({
   members: AnyRecord[];
   onContacts: () => void;
   onProfile: () => void;
+  onContact: (contact: AnyRecord) => void;
 }) {
   const stats = home?.stats || {};
   const recentContacts: AnyRecord[] = (home?.latestContacts?.length ? home.latestContacts : contacts).slice(0, 2);
@@ -484,7 +498,7 @@ function TodayScreen({
         <h2 className="fup-display px-2 text-[27px] leading-[1.1] text-black">Последние встречи</h2>
         <div className="fup-meetings-shell rounded-[38px] p-3">
           <div className="space-y-3">
-            {recentContacts.map((contact) => <RecentMeetingCard key={contact.id} contact={contact} user={contactUser(contact, members)} />)}
+            {recentContacts.map((contact) => <RecentMeetingCard key={contact.id} contact={contact} user={contactUser(contact, members)} onOpen={() => onContact(contact)} />)}
             {!recentContacts.length ? (
               <div className="fup-meeting-card rounded-[32px] px-5 py-8 text-center text-[14px] leading-6 text-[#6f7780]">
                 Здесь появятся последние сохраненные встречи.
@@ -536,10 +550,11 @@ function RoundAvatar({ user, label, className = "size-12" }: { user?: AnyRecord;
   );
 }
 
-function RecentMeetingCard({ contact, user }: { contact: AnyRecord; user?: AnyRecord }) {
+function RecentMeetingCard({ contact, user, onOpen }: { contact: AnyRecord; user?: AnyRecord; onOpen: () => void }) {
   const username = contactUsername(contact) || usernameOf(user || {});
+  const context = cleanContactContext(contact);
   return (
-    <article className="button-press fup-meeting-card rounded-[32px] p-5">
+    <button className="button-press fup-meeting-card block w-full rounded-[32px] p-5 text-left" onClick={onOpen}>
       <div className="flex items-start gap-3">
         <RoundAvatar user={user} label={contactName(contact)} className="size-[72px]" />
         <div className="min-w-0 flex-1 pt-1">
@@ -555,11 +570,11 @@ function RecentMeetingCard({ contact, user }: { contact: AnyRecord; user?: AnyRe
       <div className="mt-5 flex flex-wrap items-center justify-between gap-2">
         <p className="text-[18px] font-bold leading-tight text-black">{contactPlace(contact)}</p>
       </div>
-      <p className="mt-2 line-clamp-3 text-[15px] leading-[1.18] text-black">{contact.context || "Контекст знакомства пока не добавлен."}</p>
+      {context ? <p className="fup-subpanel mt-3 line-clamp-3 rounded-[22px] px-3 py-2 text-[14px] leading-5 text-black">{context}</p> : null}
       <div className="fup-meeting-action mt-4 inline-flex h-11 max-w-full items-center justify-center rounded-full bg-[#0087ff] px-4 text-[13px] font-medium text-white shadow-[0_10px_24px_rgba(0,135,255,0.24)]">
         <span className="truncate text-center">{contactStep(contact)}</span>
       </div>
-    </article>
+    </button>
   );
 }
 
@@ -585,6 +600,15 @@ function PeopleScreen({ event, members, me, actions }: { event: AnyRecord | null
           <h1 className="text-2xl font-semibold">Нет активного мероприятия</h1>
           <p className="mt-3 text-[14px] leading-6 text-slate-500">Каталог появится после подключения к мероприятию по QR или invite-ссылке.</p>
         </Card>
+      </div>
+    );
+  }
+
+  if (me?.user?.is_visible === false) {
+    return (
+      <div className="fup-screen space-y-3 py-1">
+        <ParticipantHeader kicker="Контакты" description="Каталог участников доступен, когда ваша анкета видна другим." />
+        <EmptyGlassState>Включите видимость в профиле, чтобы искать людей и сохранять контакты из каталога.</EmptyGlassState>
       </div>
     );
   }
@@ -641,7 +665,7 @@ function PeopleScreen({ event, members, me, actions }: { event: AnyRecord | null
                             contactUsername: usernameOf(member),
                             source: "program_member",
                             whereMet: "Каталог участников",
-                            context: `Анкета участника. Ищет: ${member.looking_for || "не указано"}. Может помочь: ${member.can_help_with || "не указано"}.`,
+                            context: [member.looking_for, member.can_help_with].filter(Boolean).join("\n"),
                             nextStepType: "Написать",
                             nextStepText: "Написать",
                             remindAt: remindAtFromDays(1),
@@ -667,7 +691,8 @@ function PeopleScreen({ event, members, me, actions }: { event: AnyRecord | null
 }
 
 function SaveScreen({ event, members, me, actions }: { event: AnyRecord | null; members: AnyRecord[]; me: AnyRecord | null; actions: AppActions }) {
-  const [mode, setMode] = useState<SaveMode>("program");
+  const programEnabled = me?.user?.is_visible !== false;
+  const [mode, setMode] = useState<SaveMode>(programEnabled ? "program" : "manual");
   const [saved, setSaved] = useState<{ contact: AnyRecord; followUp: AnyRecord } | null>(null);
 
   if (!event) {
@@ -692,10 +717,10 @@ function SaveScreen({ event, members, me, actions }: { event: AnyRecord | null; 
         value={mode}
         onChange={setMode}
         className="fup-control"
-        options={[{ value: "program", label: "Из участников" }, { value: "manual", label: "Вручную" }]}
+        options={programEnabled ? [{ value: "program", label: "Из участников" }, { value: "manual", label: "Вручную" }] : [{ value: "manual", label: "Вручную" }]}
       />
 
-      {mode === "manual" ? <ManualSaveForm event={event} actions={actions} onSaved={setSaved} /> : <ProgramMemberPicker event={event} members={members} me={me} actions={actions} onSaved={setSaved} />}
+      {mode === "manual" || !programEnabled ? <ManualSaveForm event={event} actions={actions} onSaved={setSaved} /> : <ProgramMemberPicker event={event} members={members} me={me} actions={actions} onSaved={setSaved} />}
 
       {saved ? <ReminderModal followUp={saved.followUp} contact={saved.contact} actions={actions} onClose={() => setSaved(null)} /> : null}
     </div>
@@ -823,7 +848,7 @@ function ProgramMemberPicker({ event, members, me, actions, onSaved }: { event: 
                         contactUsername: usernameOf(member),
                         source: "program_member",
                         whereMet: "Каталог участников",
-                        context: "Выбрано из списка участников программы.",
+                        context: member.looking_for || member.can_help_with || "",
                         nextStepType: "Написать",
                         nextStepText: "Написать",
                         remindAt: remindAtFromDays(1),
@@ -935,7 +960,7 @@ function FollowUpCard({ followUp, actions, onPreview }: { followUp: AnyRecord; a
         </div>
         <span className="fup-subpanel rounded-full px-3 py-1 text-[11px] font-semibold text-slate-500">{statusLabel[followUp.status] || followUp.status}</span>
       </div>
-      <p className="mt-3 text-[13px] leading-5 text-slate-600">{contact.context}</p>
+      {cleanContactContext(contact) ? <p className="mt-3 text-[13px] leading-5 text-slate-600">{cleanContactContext(contact)}</p> : null}
       <p className="mt-3 text-[13px] font-semibold text-[#1d1d1f]">Следующий шаг: {contactStep(contact)}</p>
       <div className="fup-action-grid mt-4 grid grid-cols-2 gap-2">
         {contactUsername(contact) ? (
@@ -959,22 +984,112 @@ function FollowUpCard({ followUp, actions, onPreview }: { followUp: AnyRecord; a
         <Button variant="soft" onClick={() => mark("message_sent", "Follow-up отмечен")}>Я написал</Button>
         <Button variant="soft" onClick={() => mark("meeting_booked", "Встреча сохранена")}>Назначил встречу</Button>
         <Button variant="soft" onClick={() => mark("person_introduced", "Intro сохранено")}>Сделал intro</Button>
-        <Button
-          variant="ghost"
-          className="col-span-2"
-          onClick={async () => {
-            await actions.runAction(`followup-${followUp.id}-snooze`, async () => apiClient.updateFollowupAction(followUp.id, { action: "snoozed", snoozeUntil: remindAtFromDays(2) }), "Follow-up отложен");
-            await actions.refresh();
-          }}
-        >
-          <Clock3 size={15} /> Отложить
-        </Button>
+        <SnoozeDateButton followUp={followUp} actions={actions} className="col-span-2" />
       </div>
     </div>
   );
 }
 
-function ProfileScreen({ me, actions, pendingVersion }: { me: AnyRecord | null; actions: AppActions; pendingVersion: number }) {
+function ContactDetailScreen({
+  contact,
+  members,
+  followUps,
+  actions,
+  onBack,
+}: {
+  contact: AnyRecord;
+  members: AnyRecord[];
+  followUps: AnyRecord[];
+  actions: AppActions;
+  onBack: () => void;
+}) {
+  const user = contactUser(contact, members);
+  const username = contactUsername(contact) || usernameOf(user || {});
+  const followUp = followUps.find((item) => followUpContact(item)?.id === contact.id);
+  const context = cleanContactContext(contact);
+  const openChat = async () => {
+    if (!username) {
+      actions.notify("У контакта нет Telegram username", "error");
+      return;
+    }
+    if (followUp?.id) {
+      await actions.runAction(`detail-${followUp.id}-telegram`, async () => apiClient.updateFollowupAction(followUp.id, { action: "telegram_opened" }));
+    }
+    openTelegramLink(username);
+    actions.notify("Открыли Telegram чат");
+  };
+
+  return (
+    <div className="fup-screen space-y-4 py-1">
+      <button className="button-press fup-control h-11 rounded-full px-4 text-[13px] font-semibold text-[#0066cc]" onClick={onBack}>
+        Назад
+      </button>
+      <section className="fup-panel rounded-[36px] p-5">
+        <div className="flex items-start gap-4">
+          <RoundAvatar user={user} label={contactName(contact)} className="size-[76px]" />
+          <div className="min-w-0 flex-1">
+            <p className="text-[12px] font-semibold uppercase text-[#0072fc]">{contactPlace(contact)}</p>
+            <h1 className="mt-2 text-[28px] font-semibold leading-none text-black">{contactName(contact)}</h1>
+            {username ? <p className="mt-2 truncate text-[15px] font-semibold text-[#0087ff]">@{username.replace(/^@/, "")}</p> : null}
+          </div>
+        </div>
+        <div className="mt-5 grid gap-2">
+          {user?.role || user?.company ? <p className="fup-subpanel rounded-[22px] px-3 py-2 text-[14px] text-slate-700">{roleToRu[user?.role] || user?.role || "Участник"}{user?.company ? ` · ${user.company}` : ""}</p> : null}
+          {user?.looking_for ? <InfoBlock label="Ищет" value={user.looking_for} /> : null}
+          {user?.can_help_with ? <InfoBlock label="Может помочь" value={user.can_help_with} /> : null}
+          {context ? <InfoBlock label="Контекст встречи" value={context} /> : null}
+          <InfoBlock label="Следующий шаг" value={contactStep(contact)} />
+        </div>
+        <div className="mt-5 grid gap-2 sm:grid-cols-2">
+          <Button onClick={() => void openChat()} disabled={!username}><Send size={16} /> Написать в Telegram</Button>
+          {followUp ? <Button variant="soft" onClick={() => void actions.runAction(`detail-${followUp.id}-sent`, async () => { const result = await apiClient.updateFollowupAction(followUp.id, { action: "message_sent" }); await actions.refresh(); return result; }, "Отметили сообщение")}>Я написал</Button> : null}
+          {followUp ? <Button variant="soft" onClick={() => void actions.runAction(`detail-${followUp.id}-meeting`, async () => { const result = await apiClient.updateFollowupAction(followUp.id, { action: "meeting_booked" }); await actions.refresh(); return result; }, "Встреча отмечена")}>Назначил встречу</Button> : null}
+          {followUp ? <SnoozeDateButton followUp={followUp} actions={actions} /> : null}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function InfoBlock({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="fup-subpanel rounded-[22px] px-3 py-2">
+      <p className="text-[11px] font-semibold uppercase text-[#0072fc]">{label}</p>
+      <p className="mt-1 whitespace-pre-line text-[14px] leading-5 text-slate-700">{value}</p>
+    </div>
+  );
+}
+
+function SnoozeDateButton({ followUp, actions, className = "" }: { followUp: AnyRecord; actions: AppActions; className?: string }) {
+  const min = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const snooze = async (value: string) => {
+    if (!value) return;
+    const date = new Date(`${value}T10:00:00`);
+    await actions.runAction(
+      `followup-${followUp.id}-snooze`,
+      async () => apiClient.updateFollowupAction(followUp.id, { action: "snoozed", snoozeUntil: date.toISOString() }),
+      "Задача отложена",
+    );
+    await actions.refresh();
+  };
+
+  return (
+    <label className={`button-press relative ${className}`}>
+      <span className="pointer-events-none liquid-control flex h-12 items-center justify-center gap-2 rounded-[24px] px-4 text-[13px] font-semibold text-[#0066cc]">
+        <Clock3 size={15} /> Отложить до даты
+      </span>
+      <input
+        aria-label="Отложить до даты"
+        className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+        min={min}
+        type="date"
+        onChange={(event) => void snooze(event.target.value)}
+      />
+    </label>
+  );
+}
+
+function ProfileScreen({ me, actions, pendingVersion, required = false }: { me: AnyRecord | null; actions: AppActions; pendingVersion: number; required?: boolean }) {
   const user = me?.user || {};
   const [name, setName] = useState(fullName(user));
   const [role, setRole] = useState(roleToRu[user.role] || "Основатель");
@@ -1013,9 +1128,9 @@ function ProfileScreen({ me, actions, pendingVersion }: { me: AnyRecord | null; 
   return (
     <div className="fup-screen space-y-4 py-2">
       <ParticipantHeader
-        kicker="Профиль"
-        title="Ваша карточка"
-        description="Заполните профиль, чтобы другие участники могли найти вас в каталоге события."
+        kicker={required ? "Перед стартом" : "Профиль"}
+        title={required ? "Заполните анкету" : "Ваша карточка"}
+        description={required ? "Сначала расскажите о себе и решите, показывать ли вас другим участникам." : "Заполните профиль, чтобы другие участники могли найти вас в каталоге события."}
       />
       <div className="fup-panel flex items-center gap-4 rounded-[34px] p-4">
         <RoundAvatar user={user} label={name} className="size-[68px]" />

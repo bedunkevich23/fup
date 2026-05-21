@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { QRCodeSVG } from "qrcode.react";
-import { Building2, Calendar, Copy, Eye, Lock, Plus, QrCode, Radio, Sparkles, Users, Waypoints } from "lucide-react";
+import { Building2, Calendar, Copy, Eye, Plus, QrCode, Radio, Sparkles, Users, Waypoints } from "lucide-react";
 import { apiClient } from "../../lib/apiClient";
+import fupLogoUrl from "../../assets/fup/logo.svg";
 import { Button } from "../ui/Button";
 import { Card } from "../ui/Card";
 import { MetricCard } from "../ui/MetricCard";
@@ -61,7 +62,7 @@ function OrganizerHome() {
 
   return (
     <Shell>
-      <header className="glass rounded-[32px] p-6 sm:p-8">
+      <header className="organizer-surface rounded-[32px] p-6 sm:p-8">
         <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <div className="liquid-control inline-flex rounded-full px-4 py-2 text-[13px] font-semibold text-[#0066cc]">
@@ -95,7 +96,7 @@ function OrganizerHome() {
           <h2 className="text-2xl font-semibold">Мероприятия</h2>
           <span className="text-[14px] text-slate-500">{events.length} всего</span>
         </div>
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div className="grid auto-rows-fr gap-4 lg:grid-cols-2">
           {events.map((event: AnyRecord) => (
             <Card key={event.id} className="p-5 transition duration-200 hover:-translate-y-1">
               <div className="flex items-start justify-between gap-4">
@@ -366,7 +367,7 @@ function EventPage({ eventId }: { eventId: string }) {
 
   return (
     <Shell>
-      <header className="glass rounded-[32px] p-6 sm:p-8">
+      <header className="organizer-surface rounded-[32px] p-6 sm:p-8">
         <button className="mb-6 text-[14px] font-semibold text-[#0066cc]" onClick={() => navigate("/organizer")}>
           Назад к кабинету
         </button>
@@ -425,7 +426,7 @@ function EventPage({ eventId }: { eventId: string }) {
         </Card>
       </section>
 
-      <section className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+      <section className="mt-5 grid auto-rows-fr gap-4 md:grid-cols-2 xl:grid-cols-5">
         <MetricCard label="Сохраненные знакомства" value={metrics.contactsSaved ?? overview.contacts_saved ?? 0} icon={<Waypoints size={20} />} />
         <MetricCard label="Написали людям" value={metrics.completedFollowups ?? overview.messages_sent ?? 0} icon={<Sparkles size={20} />} />
         <MetricCard label="Результаты" value={metrics.resultsTotal ?? overview.results ?? 0} icon={<Eye size={20} />} />
@@ -469,7 +470,7 @@ function EventPage({ eventId }: { eventId: string }) {
         </Card>
       </section>
 
-      <section className="mt-5 grid gap-4 lg:grid-cols-2">
+      <section className="mt-5">
         <Card className="overflow-hidden p-0">
           <TableHeader title="Активность участников" />
           <Table
@@ -480,10 +481,6 @@ function EventPage({ eventId }: { eventId: string }) {
               formatDate(member.last_activity_at || member.joined_at),
             ])}
           />
-        </Card>
-        <Card soft className="flex items-start gap-3 p-5 text-[14px] leading-6 text-slate-600">
-          <Lock className="mt-0.5 shrink-0 text-[#0066cc]" size={20} />
-          <p>Организатор видит статусы и агрегированные результаты, но не видит личную переписку.</p>
         </Card>
       </section>
 
@@ -517,7 +514,17 @@ function EventPage({ eventId }: { eventId: string }) {
 }
 
 function Shell({ children }: { children: ReactNode }) {
-  return <section className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6">{children}</section>;
+  return (
+    <section className="mx-auto w-full max-w-7xl px-4 py-4 sm:px-6 sm:py-6">
+      <div className="organizer-surface mb-4 flex items-center justify-between rounded-[28px] px-4 py-3">
+        <img src={fupLogoUrl} alt="FUP" className="h-8 w-auto" />
+        <button className="button-press text-[13px] font-semibold text-[#0066cc]" onClick={() => void apiClient.logout().then(() => window.location.assign("/organizer"))}>
+          Выйти
+        </button>
+      </div>
+      {children}
+    </section>
+  );
 }
 
 function EmptyState({ title, text }: { title: string; text: string }) {

@@ -122,7 +122,7 @@ button:disabled {
 }
 
 .fup-safe-scroll {
-  padding-top: calc(max(28px, env(safe-area-inset-top, 0px), var(--tg-safe-area-inset-top, 0px), var(--tg-content-safe-area-inset-top, 0px)) + 14px);
+  padding-top: calc(max(28px, env(safe-area-inset-top, 0px), var(--tg-safe-area-inset-top, 0px), var(--tg-content-safe-area-inset-top, 0px)) + 32px);
   padding-bottom: calc(max(120px, env(safe-area-inset-bottom, 0px), var(--tg-safe-area-inset-bottom, 0px), var(--tg-content-safe-area-inset-bottom, 0px)) + 20px);
 }
 
@@ -151,6 +151,16 @@ button:disabled {
     inset 0 1px 1px rgba(255, 255, 255, 0.98);
   backdrop-filter: blur(28px) saturate(170%);
   -webkit-backdrop-filter: blur(28px) saturate(170%);
+}
+
+.organizer-surface {
+  border: 1px solid rgba(255, 255, 255, 0.82);
+  background: linear-gradient(150deg, rgba(255, 255, 255, 0.76), rgba(240, 247, 255, 0.68));
+  box-shadow:
+    0 18px 42px rgba(22, 32, 46, 0.09),
+    inset 0 1px 1px rgba(255, 255, 255, 0.98);
+  backdrop-filter: blur(24px) saturate(150%);
+  -webkit-backdrop-filter: blur(24px) saturate(150%);
 }
 
 .fup-card,

@@ -15,6 +15,7 @@ declare global {
         expand?: () => void;
         requestFullscreen?: () => void;
         setHeaderColor?: (color: string) => void;
+        platform?: string;
         openTelegramLink?: (url: string) => void;
       };
     };
@@ -83,7 +84,9 @@ export default function App() {
           telegramApp?.expand?.();
           try {
             telegramApp?.setHeaderColor?.("#ffffff");
-            telegramApp?.requestFullscreen?.();
+            if (!["tdesktop", "macos", "web", "weba", "webk"].includes(String(telegramApp?.platform || ""))) {
+              telegramApp?.requestFullscreen?.();
+            }
           } catch {
             // Fullscreen is client-dependent; auth should continue if it is unavailable.
           }
