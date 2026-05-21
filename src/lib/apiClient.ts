@@ -27,6 +27,7 @@ async function api<T>(path: string, options: ApiOptions = {}): Promise<T> {
 export const apiClient = {
   authTelegramMiniApp: (input: { initData: string; inviteCode?: string; eventSlug?: string }) =>
     api("/api/auth/telegram-miniapp", { method: "POST", body: input }),
+  authLocalDevParticipant: () => api("/api/dev/login-participant", { method: "POST" }),
   logout: () => api("/api/auth/logout", { method: "POST" }),
   getMe: () => api("/api/me"),
   updateProfile: (profile: Record<string, unknown>) => api("/api/profile", { method: "POST", body: profile }),

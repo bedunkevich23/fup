@@ -1,6 +1,10 @@
 {
   "rewrites": [
     {
+      "source": "/api/:path*",
+      "destination": "/api/fup-api"
+    },
+    {
       "source": "/user",
       "destination": "/index.html"
     },

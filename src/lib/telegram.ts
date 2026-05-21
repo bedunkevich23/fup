@@ -32,10 +32,44 @@ export const sendReminderMock = (contact: Contact, followUp: FollowUp) =>
     minute: "2-digit",
   }).format(new Date(followUp.remind_at || (followUp as FollowUp & { due_at?: string }).due_at || Date.now()))}.`;
 
-export const hapticSuccess = () => {
-  navigator.vibrate?.(18);
+type HapticImpactStyle = "light" | "medium" | "heavy" | "rigid" | "soft";
+type HapticNotificationType = "success" | "warning" | "error";
+type TelegramHapticFeedback = {
+  impactOccurred?: (style: HapticImpactStyle) => void;
+  notificationOccurred?: (type: HapticNotificationType) => void;
+  selectionChanged?: () => void;
 };
 
-export const hapticImpact = () => {
-  navigator.vibrate?.(10);
+const telegramHaptics = () =>
+  (window as Window & {
+    Telegram?: { WebApp?: { HapticFeedback?: TelegramHapticFeedback } };
+  }).Telegram?.WebApp?.HapticFeedback;
+
+const fireHaptic = (callback: ((feedback: TelegramHapticFeedback) => void) | undefined, fallbackMs: number) => {
+  const feedback = telegramHaptics();
+  if (feedback && callback) {
+    try {
+      callback(feedback);
+      return;
+    } catch {
+      // Fall through to the browser vibration fallback for local tests.
+    }
+  }
+  navigator.vibrate?.(fallbackMs);
+};
+
+export const hapticSuccess = () => {
+  fireHaptic((feedback) => feedback.notificationOccurred?.("success"), 18);
+};
+
+export const hapticError = () => {
+  fireHaptic((feedback) => feedback.notificationOccurred?.("error"), 18);
+};
+
+export const hapticImpact = (style: HapticImpactStyle = "light") => {
+  fireHaptic((feedback) => feedback.impactOccurred?.(style), style === "heavy" ? 18 : 10);
+};
+
+export const hapticSelection = () => {
+  fireHaptic((feedback) => feedback.selectionChanged?.(), 8);
 };

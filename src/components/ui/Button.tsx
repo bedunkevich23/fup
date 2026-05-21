@@ -20,7 +20,7 @@ export function Button({
 }) {
   return (
     <button
-      className={`button-press inline-flex min-h-11 items-center justify-center gap-2 rounded-full px-5 py-2.5 text-[15px] font-medium outline-none ring-[#0071e3]/20 transition focus-visible:ring-4 ${variants[variant]} ${className}`}
+      className={`button-press inline-flex h-12 items-center justify-center gap-2 rounded-[24px] px-5 text-center text-[14px] font-semibold leading-tight outline-none ring-[#0071e3]/20 transition focus-visible:ring-4 ${variants[variant]} ${className}`}
       {...props}
     >
       {children}
