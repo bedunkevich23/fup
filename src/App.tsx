@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { OrganizerDashboard } from "./components/organizer/OrganizerDashboard";
 import { ParticipantApp } from "./components/participant/ParticipantApp";
 import { Card } from "./components/ui/Card";
+import fupLogoUrl from "./assets/fup/logo.svg";
+import starBackgroundUrl from "./assets/fup/star-background.svg";
 import { apiClient } from "./lib/apiClient";
 
 declare global {
@@ -172,37 +174,49 @@ function LaunchState({ authState, authMessage }: { authState: AuthState; authMes
   };
 
   return (
-    <main className="flex min-h-screen items-center justify-center px-4 py-8">
-      <Card className="w-full max-w-[520px] p-7 text-center sm:p-9">
-        <div className="mx-auto mb-6 flex size-16 items-center justify-center rounded-[24px] liquid-control text-2xl font-semibold text-[#0066cc]">
-          F
-        </div>
-        <h1 className="text-3xl font-semibold tracking-[-0.01em] text-[#1d1d1f]">
-          {isError ? "Не удалось запустить FUP" : "Запускаем FUP"}
-        </h1>
-        <p className={`mt-4 text-[15px] leading-7 ${isError ? "text-rose-500" : "text-slate-600"}`}>
-          {isError ? authMessage : "Получаем данные Telegram, создаем защищенную сессию и готовим ваши знакомства."}
-        </p>
-        {!isError ? (
-          <div className="mx-auto mt-7 h-2 w-36 overflow-hidden rounded-full bg-white/60">
-            <div className="h-full w-1/2 animate-[shelfIn_1.2s_ease-in-out_infinite] rounded-full bg-[#0071e3]" />
-          </div>
-        ) : null}
-        {import.meta.env.DEV ? (
-          <div className="mt-7 border-t border-white/60 pt-6">
-            <p className="text-[13px] leading-6 text-slate-500">Локальный режим разработки открывает демо-участника без Telegram initData.</p>
-            <button
-              className="liquid-control button-press mt-4 inline-flex min-h-12 items-center justify-center rounded-full px-6 py-3 text-[15px] font-semibold text-[#0066cc] disabled:cursor-wait disabled:opacity-60"
-              disabled={devLoginPending}
-              onClick={() => void loginLocally()}
-            >
-              {devLoginPending ? "Входим..." : "Войти локально"}
-            </button>
-            {devLoginError ? <p className="mt-4 text-[13px] leading-6 text-rose-500">{devLoginError}</p> : null}
-          </div>
-        ) : null}
-      </Card>
+    <main className="mx-auto min-h-[100dvh] w-full max-w-[430px] overflow-hidden bg-white shadow-[0_24px_70px_rgba(29,29,31,0.10)] sm:my-5 sm:min-h-[min(860px,calc(100dvh-40px))] sm:rounded-[34px] sm:border sm:border-white/70">
+      <div className="relative flex min-h-[100dvh] items-center justify-center overflow-hidden px-4 py-[max(28px,env(safe-area-inset-top))] sm:min-h-[min(860px,calc(100dvh-40px))]">
+        <LaunchBackdrop />
+        <section className="fup-panel relative z-10 w-full animate-[shelfIn_420ms_ease_both] rounded-[38px] px-5 py-7 text-center">
+          <img src={fupLogoUrl} alt="FUP" className="mx-auto h-[42px] w-auto" />
+          <h1 className="fup-display mt-8 text-[27px] leading-[1.08] text-black">
+            {isError ? "Не удалось открыть FUP" : "Открываем FUP"}
+          </h1>
+          <p className={`mx-auto mt-4 max-w-[300px] text-[14px] leading-6 ${isError ? "text-rose-500" : "text-[#5f6873]"}`}>
+            {isError ? authMessage : "Проверяем Telegram и готовим ваши встречи."}
+          </p>
+          {!isError ? (
+            <div className="fup-subpanel mx-auto mt-7 h-3 w-full max-w-[216px] overflow-hidden rounded-full p-0.5">
+              <div className="fup-launch-progress h-full rounded-full bg-[#0087ff] shadow-[0_8px_22px_rgba(0,135,255,0.28)]" />
+            </div>
+          ) : null}
+          {import.meta.env.DEV ? (
+            <div className="fup-subpanel mt-7 rounded-[28px] px-4 py-5">
+              <p className="text-[13px] leading-6 text-[#6b7480]">Локальный режим открывает демо-участника без Telegram initData.</p>
+              <button
+                className="button-press mt-4 inline-flex h-12 w-full items-center justify-center rounded-[24px] bg-white/70 px-5 text-[14px] font-semibold text-[#0066cc] shadow-[inset_0_1px_0_rgba(255,255,255,0.92),0_12px_28px_rgba(23,36,51,0.08)] disabled:cursor-wait disabled:opacity-60"
+                disabled={devLoginPending}
+                onClick={() => void loginLocally()}
+              >
+                {devLoginPending ? "Входим..." : "Войти локально"}
+              </button>
+              {devLoginError ? <p className="mt-4 text-[13px] leading-6 text-rose-500">{devLoginError}</p> : null}
+            </div>
+          ) : null}
+        </section>
+      </div>
     </main>
+  );
+}
+
+function LaunchBackdrop() {
+  return (
+    <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden bg-white">
+      <img className="fup-home-star fup-home-star-top" src={starBackgroundUrl} alt="" />
+      <img className="fup-home-star fup-home-star-left" src={starBackgroundUrl} alt="" />
+      <img className="fup-home-star fup-home-star-right" src={starBackgroundUrl} alt="" />
+      <div className="fup-home-haze" />
+    </div>
   );
 }
 

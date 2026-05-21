@@ -283,9 +283,23 @@ button:disabled {
   font-size: 13px;
 }
 
+.fup-launch-progress {
+  width: 54%;
+  animation: launchProgress 1.45s ease-in-out infinite alternate;
+}
+
 .apple-scroll {
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
+}
+
+@keyframes launchProgress {
+  from {
+    transform: translateX(-76%);
+  }
+  to {
+    transform: translateX(160%);
+  }
 }
 
 @keyframes shelfIn {
