@@ -13,6 +13,8 @@ declare global {
         initData?: string;
         ready?: () => void;
         expand?: () => void;
+        requestFullscreen?: () => void;
+        setHeaderColor?: (color: string) => void;
         openTelegramLink?: (url: string) => void;
       };
     };
@@ -76,8 +78,15 @@ export default function App() {
       const initData = await getTelegramInitData();
       if (initData) {
         try {
-          window.Telegram?.WebApp?.ready?.();
-          window.Telegram?.WebApp?.expand?.();
+          const telegramApp = window.Telegram?.WebApp;
+          telegramApp?.ready?.();
+          telegramApp?.expand?.();
+          try {
+            telegramApp?.setHeaderColor?.("#ffffff");
+            telegramApp?.requestFullscreen?.();
+          } catch {
+            // Fullscreen is client-dependent; auth should continue if it is unavailable.
+          }
           await apiClient.authTelegramMiniApp({ initData, inviteCode });
           await apiClient.getMe();
           if (!cancelled) setAuthState("authorized");

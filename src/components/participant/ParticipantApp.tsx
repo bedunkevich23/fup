@@ -190,7 +190,7 @@ export function ParticipantApp() {
 
   return (
     <section
-      className="mx-auto h-[100dvh] w-full max-w-[430px] overflow-hidden bg-[linear-gradient(180deg,rgba(255,255,255,0.90),rgba(245,250,255,0.78))] shadow-[0_24px_70px_rgba(29,29,31,0.10)] backdrop-blur-3xl sm:my-5 sm:h-[min(860px,calc(100dvh-40px))] sm:rounded-[34px] sm:border sm:border-white/70"
+      className="fup-participant-shell mx-auto w-full max-w-[430px] overflow-hidden bg-[linear-gradient(180deg,rgba(255,255,255,0.90),rgba(245,250,255,0.78))] shadow-[0_24px_70px_rgba(29,29,31,0.10)] backdrop-blur-3xl sm:my-5 sm:h-[min(860px,calc(100dvh-40px))] sm:rounded-[34px] sm:border sm:border-white/70"
       onChangeCapture={(event) => {
         const target = event.target;
         if (target instanceof HTMLSelectElement || (target instanceof HTMLInputElement && ["checkbox", "radio", "range"].includes(target.type))) {
@@ -299,11 +299,11 @@ function Avatar({ user, size = "md" }: { user?: AnyRecord; size?: "sm" | "md" | 
 function LoadingScreen() {
   return (
     <div className="flex min-h-[70dvh] items-center justify-center">
-      <Card className="w-full p-6 text-center">
-        <div className="mx-auto flex size-14 items-center justify-center rounded-[22px] liquid-control text-xl font-semibold text-[#0066cc]">F</div>
+      <div className="fup-panel w-full rounded-[38px] p-6 text-center">
+        <img src={fupLogoUrl} alt="FUP" className="mx-auto h-[42px] w-auto" />
         <h1 className="mt-4 text-2xl font-semibold">Собираем ваши полочки</h1>
         <p className="mt-2 text-[14px] leading-6 text-slate-500">Загружаем профиль, контакты и follow-ups из FUP.</p>
-      </Card>
+      </div>
     </div>
   );
 }
@@ -353,7 +353,7 @@ function JoinEventScreen({ actions, onProfile }: { actions: AppActions; onProfil
             onKeyDown={(event) => {
               if (event.key === "Enter") void join();
             }}
-            placeholder="Например, demo2026"
+            placeholder="demo2026"
             className="h-14 w-full rounded-[24px] border border-white/70 bg-white/62 px-4 text-[17px] font-semibold tracking-[0] outline-none ring-[#0071e3]/15 transition placeholder:font-medium placeholder:text-slate-400 focus:ring-4"
           />
         </label>
@@ -383,12 +383,12 @@ function Shelf({ title, subtitle, children, className = "" }: { title: string; s
   );
 }
 
-function ParticipantHeader({ kicker, title, description }: { kicker?: string; title: string; description?: string }) {
+function ParticipantHeader({ kicker, title, description }: { kicker?: string; title?: string; description?: string }) {
   return (
     <header className="fup-screen-header px-2 pt-1">
       {kicker ? <p className="text-[12px] font-semibold uppercase text-[#0072fc]">{kicker}</p> : null}
-      <h1 className="fup-display mt-2 text-[27px] leading-[1.1] text-black">{title}</h1>
-      {description ? <p className="mt-3 text-[14px] leading-6 text-[#5f6873]">{description}</p> : null}
+      {title ? <h1 className="fup-display mt-2 text-[27px] leading-[1.1] text-black">{title}</h1> : null}
+      {description ? <p className={`${title ? "mt-3" : "mt-2"} text-[14px] leading-6 text-[#5f6873]`}>{description}</p> : null}
     </header>
   );
 }
@@ -590,10 +590,9 @@ function PeopleScreen({ event, members, me, actions }: { event: AnyRecord | null
   }
 
   return (
-    <div className="fup-screen space-y-4 py-2">
+    <div className="fup-screen space-y-3 py-1">
       <ParticipantHeader
         kicker="Контакты"
-        title="Люди на событии"
         description="Смотрите анкеты участников и сохраняйте тех, к кому важно вернуться после встречи."
       />
       <div className="fup-control flex h-14 items-center gap-2 rounded-[28px] px-4">
@@ -602,7 +601,11 @@ function PeopleScreen({ event, members, me, actions }: { event: AnyRecord | null
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Поиск по роли, компании или запросу"
-          className="w-full bg-transparent text-[14px] outline-none placeholder:text-slate-400"
+          autoComplete="off"
+          autoCorrect="off"
+          spellCheck={false}
+          enterKeyHint="search"
+          className="w-full bg-transparent text-[16px] outline-none placeholder:text-slate-400"
         />
       </div>
       <div className="space-y-3">
@@ -664,7 +667,7 @@ function PeopleScreen({ event, members, me, actions }: { event: AnyRecord | null
 }
 
 function SaveScreen({ event, members, me, actions }: { event: AnyRecord | null; members: AnyRecord[]; me: AnyRecord | null; actions: AppActions }) {
-  const [mode, setMode] = useState<SaveMode>("manual");
+  const [mode, setMode] = useState<SaveMode>("program");
   const [saved, setSaved] = useState<{ contact: AnyRecord; followUp: AnyRecord } | null>(null);
 
   if (!event) {
@@ -679,10 +682,9 @@ function SaveScreen({ event, members, me, actions }: { event: AnyRecord | null; 
   }
 
   return (
-    <div className="fup-screen space-y-4 py-2">
+    <div className="fup-screen space-y-3 py-1">
       <ParticipantHeader
         kicker="Новый контакт"
-        title="Добавить встречу"
         description="Сохраните человека, контекст разговора и следующий шаг в одной карточке."
       />
 
@@ -690,7 +692,7 @@ function SaveScreen({ event, members, me, actions }: { event: AnyRecord | null; 
         value={mode}
         onChange={setMode}
         className="fup-control"
-        options={[{ value: "manual", label: "Вручную" }, { value: "program", label: "Из участников" }]}
+        options={[{ value: "program", label: "Из участников" }, { value: "manual", label: "Вручную" }]}
       />
 
       {mode === "manual" ? <ManualSaveForm event={event} actions={actions} onSaved={setSaved} /> : <ProgramMemberPicker event={event} members={members} me={me} actions={actions} onSaved={setSaved} />}
@@ -897,10 +899,9 @@ function FollowUpsScreen({ followUps, actions }: { followUps: AnyRecord[]; actio
   ];
 
   return (
-    <div className="fup-screen space-y-4 py-2">
+    <div className="fup-screen space-y-3 py-1">
       <ParticipantHeader
         kicker="Задачи"
-        title="Следующие шаги"
         description="Здесь лежат напоминания и действия по встречам, которые еще нужно довести до результата."
       />
       {groups.map((group) => (
