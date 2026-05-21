@@ -62,7 +62,21 @@ bun run dev
 
 Frontend opens on `http://localhost:3000`, API opens on `http://localhost:8787`.
 
-## 4. Local Telegram Mini App Test With ngrok
+## 4. Telegram Mini App URLs
+
+Production Mini App / Menu Button / Web App URL:
+
+```bash
+https://fup-beta.vercel.app
+```
+
+Production organizer Telegram OIDC redirect URL:
+
+```bash
+https://fup-beta.vercel.app/api/auth/telegram-login/callback
+```
+
+### Local Telegram Mini App Test With ngrok
 
 1. Start the local API server:
 
@@ -126,16 +140,16 @@ https://xxxx.ngrok-free.app/organizer
 
 Organizer dashboard uses Telegram OIDC web login, not Mini App `initData`.
 
-Allowed redirect URL in BotFather:
+Allowed production redirect URL in BotFather:
 
 ```bash
-https://xxxx.ngrok-free.dev/api/auth/telegram-login/callback
+https://fup-beta.vercel.app/api/auth/telegram-login/callback
 ```
 
-Open organizer dashboard:
+Open production organizer dashboard:
 
 ```bash
-https://xxxx.ngrok-free.dev/organizer
+https://fup-beta.vercel.app/organizer
 ```
 
 Flow:

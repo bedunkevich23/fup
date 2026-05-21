@@ -13,9 +13,7 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
   const webappHost = hostFromUrl(env.WEBAPP_URL);
   const oidcHost = hostFromUrl(env.TELEGRAM_OIDC_REDIRECT_URI);
-  const allowedHosts = Array.from(
-    new Set(["subtrifid-krystyna-suspensively.ngrok-free.dev", webappHost, oidcHost].filter(Boolean) as string[]),
-  );
+  const allowedHosts = Array.from(new Set([webappHost, oidcHost].filter(Boolean) as string[]));
 
   return {
     plugins: [react()],

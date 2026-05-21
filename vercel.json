@@ -1,0 +1,20 @@
+{
+  "rewrites": [
+    {
+      "source": "/user",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/organizer/:path*",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/admin",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/join/:path*",
+      "destination": "/index.html"
+    }
+  ]
+}
