@@ -129,6 +129,44 @@ const snoozeUntil = () => {
   return date.toISOString();
 };
 
+async function processReminderCron(req, res) {
+  requireSharedSecret(req, "CRON_SECRET", "x-cron-secret");
+  const pending = await getPendingReminders();
+  const result = { ok: true, processed: pending.length, sent: 0, failed: 0 };
+
+  for (const reminder of pending) {
+    const followup = reminder.followups || {};
+    const contact = followup.contacts || {};
+    const user = reminder.users || {};
+    try {
+      const telegramId = user.telegram_chat_id || user.telegram_id;
+      if (!telegramId) throw new Error("Telegram chat is not available");
+      const message = await sendTelegramReminder({
+        telegramId,
+        followupId: followup.id,
+        contactName: contact.contact_name || "контакту",
+        context: contact.context || "контекст не указан",
+        nextStep: followup.next_step_text || contact.next_step_text || "Написать",
+      });
+      await markReminderSent({
+        reminderId: reminder.id,
+        followupId: followup.id,
+        telegramMessageId: message.message_id,
+      });
+      result.sent += 1;
+    } catch (error) {
+      await markReminderFailed({
+        reminderId: reminder.id,
+        followupId: followup.id,
+        errorMessage: error.message,
+      });
+      result.failed += 1;
+    }
+  }
+
+  return json(res, 200, result);
+}
+
 const routes = [
   route("GET", /^\/api\/auth\/telegram-login\/start$/, async (req, res) => {
     const url = new URL(req.url, `http://${req.headers.host}`);
@@ -262,48 +300,11 @@ const routes = [
     );
   }),
 
-  route("POST", /^\/api\/cron\/reminders$/, async (req, res) => {
-    requireSharedSecret(req, "CRON_SECRET", "x-cron-secret");
-    const pending = await getPendingReminders();
-    const result = { ok: true, processed: pending.length, sent: 0, failed: 0 };
-
-    for (const reminder of pending) {
-      const followup = reminder.followups || {};
-      const contact = followup.contacts || {};
-      const user = reminder.users || {};
-      try {
-        const telegramId = user.telegram_chat_id || user.telegram_id;
-        if (!telegramId) throw new Error("Telegram chat is not available");
-        const message = await sendTelegramReminder({
-          telegramId,
-          followupId: followup.id,
-          contactName: contact.contact_name || "контакту",
-          context: contact.context || "контекст не указан",
-          nextStep: followup.next_step_text || contact.next_step_text || "Написать",
-        });
-        await markReminderSent({
-          reminderId: reminder.id,
-          followupId: followup.id,
-          telegramMessageId: message.message_id,
-        });
-        result.sent += 1;
-      } catch (error) {
-        await markReminderFailed({
-          reminderId: reminder.id,
-          followupId: followup.id,
-          errorMessage: error.message,
-        });
-        result.failed += 1;
-      }
-    }
-
-    return json(res, 200, result);
-  }),
+  route("GET", /^\/api\/cron\/reminders$/, processReminderCron),
+  route("POST", /^\/api\/cron\/reminders$/, processReminderCron),
 
   route("POST", /^\/api\/telegram\/webhook$/, async (req, res) => {
-    if (process.env.TELEGRAM_WEBHOOK_SECRET) {
-      requireSharedSecret(req, "TELEGRAM_WEBHOOK_SECRET", "x-telegram-bot-api-secret-token");
-    }
+    requireSharedSecret(req, "TELEGRAM_WEBHOOK_SECRET", "x-telegram-bot-api-secret-token");
     const body = await readJson(req);
     const callback = body.callback_query;
     if (!callback?.data?.startsWith("fup:")) return json(res, 200, { ok: true });

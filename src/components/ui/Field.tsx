@@ -5,14 +5,19 @@ const inputClass =
 
 export function Field({
   label,
+  required = false,
   children,
 }: {
   label: string;
+  required?: boolean;
   children: ReactNode;
 }) {
   return (
     <label className="block">
-      <span className="mb-2 block text-[13px] font-semibold text-slate-600">{label}</span>
+      <span className="mb-2 block text-[13px] font-semibold text-slate-600">
+        {label}
+        {required ? <span aria-hidden className="ml-1 text-[#0087ff]">*</span> : null}
+      </span>
       {children}
     </label>
   );
