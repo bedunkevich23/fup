@@ -264,11 +264,30 @@ button:disabled {
   -webkit-backdrop-filter: blur(30px) saturate(180%);
 }
 
+.fup-bottom-nav {
+  align-items: center;
+  overflow: hidden;
+}
+
+.fup-tab {
+  border: 1px solid transparent;
+  outline: none;
+  position: relative;
+  z-index: 1;
+}
+
 .fup-tab.is-active {
+  border: 1px solid rgba(255, 255, 255, 0.62);
   background: linear-gradient(145deg, rgba(222, 223, 225, 0.72), rgba(235, 236, 238, 0.54));
   box-shadow:
     inset 0 1px 1px rgba(255, 255, 255, 0.96),
-    0 8px 22px rgba(23, 36, 51, 0.08);
+    inset 0 -1px 0 rgba(255, 255, 255, 0.36);
+}
+
+.fup-tab:focus-visible {
+  box-shadow:
+    inset 0 0 0 2px rgba(0, 135, 255, 0.26),
+    inset 0 1px 1px rgba(255, 255, 255, 0.96);
 }
 
 .fup-add-button.is-active {

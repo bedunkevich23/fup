@@ -1109,18 +1109,30 @@ function ProfileScreen({ me, actions, pendingVersion, required = false }: { me: 
 
   const submit = async () => {
     const nameParts = splitFullName(name);
-    await actions.runAction(
+    if (
+      !nameParts.first_name ||
+      !nameParts.last_name ||
+      !role.trim() ||
+      !company.trim() ||
+      !lookingFor.trim() ||
+      !canHelpWith.trim()
+    ) {
+      actions.notify("Ошибка: необходимо заполнить все поля", "error");
+      return;
+    }
+    const savedProfile = await actions.runAction(
       "save-profile",
       async () => apiClient.updateProfile({
         ...nameParts,
         role: roleToDb[role] || "other",
-        looking_for: lookingFor,
-        can_help_with: canHelpWith,
-        company,
+        looking_for: lookingFor.trim(),
+        can_help_with: canHelpWith.trim(),
+        company: company.trim(),
         is_visible: isVisible,
       }),
       "Профиль сохранен",
     );
+    if (!savedProfile) return;
     hapticSuccess();
     await actions.refresh();
   };
@@ -1141,15 +1153,15 @@ function ProfileScreen({ me, actions, pendingVersion, required = false }: { me: 
       </div>
       <Shelf title="Базовая карточка">
         <div className="space-y-3">
-          <Field label="Имя и фамилия"><TextInput value={name} onChange={(event) => setName(event.target.value)} /></Field>
-          <Field label="Роль"><SelectInput value={role} onChange={(event) => setRole(event.target.value)}>{roles.map((item) => <option key={item}>{item}</option>)}</SelectInput></Field>
-          <Field label="Вуз / компания / сфера"><TextInput value={company} onChange={(event) => setCompany(event.target.value)} /></Field>
+          <Field label="Имя и фамилия" required><TextInput required value={name} onChange={(event) => setName(event.target.value)} /></Field>
+          <Field label="Роль" required><SelectInput required value={role} onChange={(event) => setRole(event.target.value)}>{roles.map((item) => <option key={item}>{item}</option>)}</SelectInput></Field>
+          <Field label="Вуз / компания / сфера" required><TextInput required value={company} onChange={(event) => setCompany(event.target.value)} /></Field>
         </div>
       </Shelf>
       <Shelf title="Чем вы полезны">
         <div className="space-y-3">
-          <Field label="Кого ищу"><TextArea value={lookingFor} onChange={(event) => setLookingFor(event.target.value)} /></Field>
-          <Field label="Чем могу помочь"><TextArea value={canHelpWith} onChange={(event) => setCanHelpWith(event.target.value)} /></Field>
+          <Field label="Кого ищу" required><TextArea required value={lookingFor} onChange={(event) => setLookingFor(event.target.value)} /></Field>
+          <Field label="Чем могу помочь" required><TextArea required value={canHelpWith} onChange={(event) => setCanHelpWith(event.target.value)} /></Field>
           <label className="fup-subpanel flex items-center justify-between gap-4 rounded-[24px] p-3">
             <span className="text-[14px] font-semibold text-slate-700">Показывать мой профиль участникам</span>
             <AppleSwitch checked={isVisible} onChange={setIsVisible} label="Показывать мой профиль участникам" />

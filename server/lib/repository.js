@@ -4,7 +4,17 @@ import { hasSupabaseEnv, supabaseAdmin } from "./supabaseAdmin.js";
 import { createRawSessionToken, hashSessionToken } from "./session.js";
 
 const from = (table) => supabaseAdmin.from(table);
-const profileCompleted = (user) => Boolean(user?.first_name && user?.last_name && user?.looking_for);
+const profileText = (value) => String(value || "").trim();
+const hasRequiredProfileFields = (profile) =>
+  Boolean(
+    profileText(profile?.first_name) &&
+      profileText(profile?.last_name) &&
+      profileText(profile?.role) &&
+      profileText(profile?.company) &&
+      profileText(profile?.looking_for) &&
+      profileText(profile?.can_help_with),
+  );
+const profileCompleted = (user) => Boolean(user?.profile_completed_at || hasRequiredProfileFields(user));
 const nameFromTelegram = (tg = {}) =>
   [tg.first_name || tg.telegram_first_name, tg.last_name || tg.telegram_last_name].filter(Boolean).join(" ") ||
   tg.telegram_username ||
@@ -637,20 +647,34 @@ export async function getMe(userId) {
 }
 
 export async function updateProfile(userId, input) {
-  const completedAt = input.first_name && input.last_name && input.looking_for ? timestamp() : undefined;
+  const normalized = {
+    ...input,
+    first_name: profileText(input.first_name),
+    last_name: profileText(input.last_name),
+    role: profileText(input.role),
+    company: profileText(input.company),
+    looking_for: profileText(input.looking_for),
+    can_help_with: profileText(input.can_help_with),
+  };
+  if (!hasRequiredProfileFields(normalized)) {
+    const error = new Error("Ошибка: необходимо заполнить все поля");
+    error.status = 400;
+    throw error;
+  }
+  const completedAt = timestamp();
   const payload = {
-    first_name: input.first_name,
-    last_name: input.last_name,
-    role: input.role ? toDbRole(input.role) : undefined,
-    looking_for: input.looking_for,
-    can_help_with: input.can_help_with,
-    company: input.company,
-    education: input.education,
-    field: input.field,
-    city: input.city,
-    is_visible: input.is_visible,
-    looking_for_tags: input.tags || tagsFrom(input.looking_for),
-    can_help_with_tags: input.tags || tagsFrom(input.can_help_with),
+    first_name: normalized.first_name,
+    last_name: normalized.last_name,
+    role: toDbRole(normalized.role),
+    looking_for: normalized.looking_for,
+    can_help_with: normalized.can_help_with,
+    company: normalized.company,
+    education: normalized.education,
+    field: normalized.field,
+    city: normalized.city,
+    is_visible: normalized.is_visible,
+    looking_for_tags: normalized.tags || tagsFrom(normalized.looking_for),
+    can_help_with_tags: normalized.tags || tagsFrom(normalized.can_help_with),
     profile_completed_at: completedAt,
     updated_at: timestamp(),
   };

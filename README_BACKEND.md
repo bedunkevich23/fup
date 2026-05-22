@@ -181,7 +181,13 @@ curl -X POST "$WEBAPP_URL/api/cron/reminders" \
   -H "X-Cron-Secret: $CRON_SECRET"
 ```
 
-Recommended production scheduler: Supabase Scheduled Edge Function, Vercel Cron, Render Cron, Railway Cron, or another server-side scheduler that can send the `X-Cron-Secret` header.
+Recommended production scheduler for the current FUP deployment: Supabase Cron.
+It can call the protected Vercel backend directly, so no separate Edge Function is needed for reminders.
+
+Run `supabase/reminder-cron.sql` in the Supabase SQL Editor after replacing the Vault secret placeholder with the same `CRON_SECRET` value configured in Vercel.
+The job posts to `/api/cron/reminders` every 5 minutes with the `X-Cron-Secret` header.
+
+If the Vault secrets already exist, update them in Supabase Vault instead of creating duplicate `fup_webapp_url` or `fup_cron_secret` secrets.
 
 ## 5. Smoke Tests
 
