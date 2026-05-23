@@ -4,6 +4,22 @@ const escapeHtml = (value) =>
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
 
+const compactText = (value, fallback = "") => {
+  const text = String(value || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .join("\n");
+  return text || fallback;
+};
+
+const cadenceLabel = (cadenceKey) => {
+  if (cadenceKey === "day1") return "1 день";
+  if (cadenceKey === "day2") return "2 дня";
+  if (cadenceKey === "week1") return "неделю";
+  return "";
+};
+
 export function getMiniAppUrl(startParam = "fup") {
   const bot = process.env.TELEGRAM_BOT_USERNAME;
   if (bot) {
@@ -13,7 +29,25 @@ export function getMiniAppUrl(startParam = "fup") {
   return `${process.env.WEBAPP_URL || "http://localhost:3000"}/user`;
 }
 
-async function sendTelegramMessage({ telegramId, text, parseMode = "HTML" }) {
+export function getMiniAppWebUrl(startParam = "fup") {
+  const base = process.env.WEBAPP_URL || "http://localhost:3000";
+  const url = new URL("/user", base);
+  if (startParam) url.searchParams.set("startapp", startParam);
+  return url.toString();
+}
+
+function miniAppReplyMarkup({ text = "Открыть FUP", startParam = "fup" } = {}) {
+  const webAppUrl = getMiniAppWebUrl(startParam);
+  const button = webAppUrl.startsWith("https://")
+    ? { text, web_app: { url: webAppUrl } }
+    : { text, url: getMiniAppUrl(startParam) };
+
+  return {
+    inline_keyboard: [[button]],
+  };
+}
+
+async function sendTelegramMessage({ telegramId, text, parseMode = "HTML", replyMarkup }) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   if (!token) {
     throw new Error("Telegram bot token is not configured");
@@ -27,6 +61,7 @@ async function sendTelegramMessage({ telegramId, text, parseMode = "HTML" }) {
       text,
       parse_mode: parseMode,
       disable_web_page_preview: true,
+      ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
     }),
   });
 
@@ -38,82 +73,121 @@ async function sendTelegramMessage({ telegramId, text, parseMode = "HTML" }) {
 }
 
 export async function sendTelegramReminder({ telegramId, contactName, context, nextStep }) {
-  const miniAppUrl = getMiniAppUrl();
-  const cleanContext = String(context || "").trim();
+  const cleanContactName = escapeHtml(contactName || "контакт");
+  const cleanContext = compactText(context);
+  const cleanNextStep = escapeHtml(nextStep || "Написать");
   const text = [
-    "<b>FUP напоминает</b>",
+    "<b>Пора вернуться к знакомству.</b>",
     "",
-    `Вы хотели вернуться к контакту: <b>${escapeHtml(contactName || "контакту")}</b>`,
-    cleanContext ? `\n<b>Контекст</b>\n${escapeHtml(cleanContext)}` : "",
-    `\n<b>Следующий шаг</b>\n${escapeHtml(nextStep || "Написать")}`,
+    `Ты хотел не потерять контакт с <b>${cleanContactName}</b>. Сейчас хороший момент сделать следующий шаг, пока контекст еще живой.`,
     "",
-    `Откройте Mini App и отметьте, что получилось: <a href="${miniAppUrl}">Открыть FUP</a>`,
+    `<b>Что сделать:</b>\n${cleanNextStep}`,
+    cleanContext ? `\n<b>Контекст:</b>\n${escapeHtml(cleanContext)}` : "",
+    "",
+    "Открой FUP кнопкой ниже и отметь результат.",
   ].filter(Boolean).join("\n");
 
-  return sendTelegramMessage({ telegramId, text });
+  return sendTelegramMessage({ telegramId, text, replyMarkup: miniAppReplyMarkup() });
 }
 
 export async function sendTelegramWelcome({ telegramId, firstName }) {
-  const miniAppUrl = getMiniAppUrl();
   const name = firstName ? `, ${escapeHtml(firstName)}` : "";
   const text = [
     `<b>Привет${name}! Это FUP.</b>`,
     "",
     "Я буду тихо помогать не терять полезные знакомства после событий: напоминать, кого открыть, кому написать и где дальше дожать контакт.",
     "",
-    `Начните с Mini App: <a href="${miniAppUrl}">открыть FUP</a>`,
+    "Открой Mini App кнопкой ниже и начни с анкеты.",
   ].join("\n");
 
-  return sendTelegramMessage({ telegramId, text });
+  return sendTelegramMessage({ telegramId, text, replyMarkup: miniAppReplyMarkup() });
 }
 
-export async function sendLifecycleNotification({ telegramId, type, user, event, metadata }) {
-  const miniAppUrl = getMiniAppUrl("fup");
+export async function sendLifecycleNotification({ telegramId, type, cadenceKey, user, event, metadata }) {
   const firstName = escapeHtml(user?.first_name || user?.telegram_first_name || "");
   const eventName = escapeHtml(event?.name || metadata?.event_name || "события");
-  const contactName = escapeHtml(metadata?.contact_name || "контакта");
-  const nextStep = escapeHtml(metadata?.next_step || "написать");
+  const contactName = escapeHtml(metadata?.contact_name || "контакт");
+  const nextStep = escapeHtml(metadata?.next_step || "Написать");
   const intro = firstName ? `${firstName}, ` : "";
+  const waitLabel = cadenceLabel(cadenceKey);
+
+  const contactNotWrittenIntro = {
+    day1: [
+      "<b>Вчера ты добавил новый контакт.</b>",
+      "",
+      "Самое время написать приветственное сообщение, пока искра не ушла. Достаточно пары строк: кто ты, где познакомились и зачем хочешь продолжить диалог.",
+    ],
+    day2: [
+      "<b>Прошло два дня с нового знакомства.</b>",
+      "",
+      "Это все еще отличный момент вернуться к человеку: поделиться впечатлением о мероприятии, отправить полезную ссылку или предложить короткий созвон.",
+    ],
+    week1: [
+      "<b>Прошла неделя после знакомства.</b>",
+      "",
+      "Пора мягко напомнить о себе. Можно написать без лишней официальности: спросить, как дела, и вернуться к теме, которую обсуждали.",
+    ],
+  };
+
+  const noContactIntro = {
+    day1: [
+      "<b>Супер, профиль готов.</b>",
+      "",
+      "Теперь самое время для нетворкинга. Открой каталог участников и сохрани первый контакт, чтобы FUP потом напомнил о следующем шаге.",
+    ],
+    day2: [
+      "<b>Профиль уже на месте, а база контактов пока пустая.</b>",
+      "",
+      "Попробуй найти одного человека по сфере, роли или запросу. Один сохраненный контакт уже превращает мероприятие в понятный следующий шаг.",
+    ],
+    week1: [
+      "<b>Контакты сами себя не сохранят.</b>",
+      "",
+      `Если на ${eventName} был кто-то полезный, самое время занести его в FUP. Даже короткая заметка лучше, чем пытаться вспомнить все через месяц.`,
+    ],
+  };
+
   const templates = {
     bot_started_open_app: [
-      `<b>${intro}FUP уже на месте.</b>`,
+      `<b>${intro}ты нажал старт, но пока не открыл приложение.</b>`,
       "",
-      "Остался один маленький шаг: открыть Mini App, чтобы я понял, к какому событию вас подключить.",
+      "Зайди внутрь, чтобы посмотреть список участников и начать знакомиться. Это займет меньше 15 секунд.",
       "",
-      `Жмите сюда: <a href="${miniAppUrl}">открыть FUP</a>`,
+      "Открой FUP кнопкой ниже.",
     ],
     profile_incomplete: [
-      `<b>${intro}анкета почти просится наружу.</b>`,
+      `<b>${intro}анкета заполнена не до конца.</b>`,
       "",
-      "Заполните пару полей, и участники смогут понять, с чем к вам подходить и чем вы можете быть полезны.",
+      "Остался один шаг: допиши, кого ищешь и чем можешь быть полезен. Так другие участники смогут тебя найти, а ты увидишь подходящих людей.",
       "",
-      `Давайте добьем красиво: <a href="${miniAppUrl}">открыть анкету</a>`,
+      "Открой FUP кнопкой ниже и заверши анкету.",
     ],
     no_contact_after_profile: [
-      `<b>${intro}у вас уже есть профиль на ${eventName}.</b>`,
+      ...(noContactIntro[cadenceKey] || noContactIntro.day1),
       "",
-      "Теперь самое вкусное: сохранить хотя бы одно полезное знакомство. Так FUP сможет напомнить о следующем шаге, а не просто красиво лежать в телефоне.",
+      `<b>Событие:</b>\n${eventName}`,
       "",
-      `Открыть участников: <a href="${miniAppUrl}">перейти в FUP</a>`,
+      "Открой FUP кнопкой ниже и перейди в Контакты.",
     ],
     contact_not_written: [
-      `<b>${intro}контакт с ${contactName} еще теплый.</b>`,
+      ...(contactNotWrittenIntro[cadenceKey] || contactNotWrittenIntro.day1),
       "",
-      `Следующий шаг: <b>${nextStep}</b>`,
+      `<b>Контакт:</b>\n${contactName}`,
       "",
-      "Лучше написать, пока контекст не растворился в неделе. FUP уже держит ниточку.",
+      `<b>Что сделать:</b>\n${nextStep}`,
+      waitLabel ? `\nFUP ждет уже ${waitLabel}, поэтому лучше закрыть этот шаг сейчас.` : "",
       "",
-      `Открыть карточку: <a href="${miniAppUrl}">перейти в FUP</a>`,
+      "Открой FUP кнопкой ниже и отметь, что получилось.",
     ],
   };
 
   const lines = templates[type] || [
     `<b>${intro}FUP напоминает.</b>`,
     "",
-    `Откройте Mini App и проверьте следующий шаг: <a href="${miniAppUrl}">перейти в FUP</a>`,
+    "Открой приложение кнопкой ниже и проверь следующий шаг.",
   ];
 
-  return sendTelegramMessage({ telegramId, text: lines.join("\n") });
+  return sendTelegramMessage({ telegramId, text: lines.join("\n"), replyMarkup: miniAppReplyMarkup() });
 }
 
 export async function answerTelegramCallbackQuery({ callbackQueryId, text }) {

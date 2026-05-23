@@ -240,6 +240,7 @@ async function processReminderCron(req, res) {
       const message = await sendLifecycleNotification({
         telegramId,
         type: notification.notification_type,
+        cadenceKey: notification.cadence_key,
         user,
         event,
         metadata: notification.metadata || {},
