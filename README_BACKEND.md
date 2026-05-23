@@ -189,6 +189,19 @@ The job posts to `/api/cron/reminders` every 5 minutes with the `X-Cron-Secret` 
 
 If the Vault secrets already exist, update them in Supabase Vault instead of creating duplicate `fup_webapp_url` or `fup_cron_secret` secrets.
 
+For bot lifecycle nudges, run `supabase/bot-lifecycle-notifications.sql` once in the Supabase SQL Editor.
+It creates `public.bot_notifications` and `public.fup_enqueue_lifecycle_notifications()`.
+The existing `/api/cron/reminders` cron endpoint calls that function before sending Telegram messages, so no second scheduler is required.
+
+Lifecycle messages currently cover:
+
+- user pressed `/start` in the bot but did not open the Mini App;
+- user opened the Mini App but did not finish the profile;
+- user finished the profile but saved no contacts;
+- user saved a contact but did not mark the follow-up as done/result.
+
+Each lifecycle sequence is scheduled after 1 day, 2 days, and 7 days. Obsolete pending messages are cancelled automatically when the user completes the step.
+
 ## 5. Smoke Tests
 
 Health:

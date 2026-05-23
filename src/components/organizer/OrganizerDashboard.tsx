@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { QRCodeSVG } from "qrcode.react";
-import { Building2, Calendar, Copy, Eye, Plus, QrCode, Radio, Sparkles, Users, Waypoints } from "lucide-react";
+import { ArrowLeft, Building2, Calendar, Copy, Eye, FileText, Plus, QrCode, Radio, Sparkles, Users, Waypoints } from "lucide-react";
 import { apiClient } from "../../lib/apiClient";
 import fupLogoUrl from "../../assets/fup/logo.svg";
 import { Button } from "../ui/Button";
@@ -47,7 +47,7 @@ function OrganizerHome() {
   }, []);
 
   if (error) return <Shell><EmptyState title="Не удалось открыть кабинет" text={error} /></Shell>;
-  if (!orgMe) return <Shell><EmptyState title="Загружаем кабинет" text="Проверяем роль организатора..." /></Shell>;
+  if (!orgMe) return <Shell><OrganizerSkeleton title="Загружаем кабинет" /></Shell>;
   if (!orgMe.organizations?.length) {
     return (
       <Shell>
@@ -254,6 +254,7 @@ function CreateEventPage() {
   }, []);
 
   const organizationId = orgMe?.organizations?.[0]?.organization?.id;
+  if (!orgMe) return <Shell><OrganizerSkeleton title="Готовим форму события" /></Shell>;
 
   const submit = async () => {
     if (!organizationId || !form.name.trim()) return;
@@ -286,8 +287,8 @@ function CreateEventPage() {
   return (
     <Shell>
       <Card className="p-6 sm:p-8">
-        <button className="mb-6 text-[14px] font-semibold text-[#0066cc]" onClick={() => navigate("/organizer")}>
-          Назад к кабинету
+        <button aria-label="Назад к кабинету" className="organizer-back-button mb-6" onClick={() => navigate("/organizer")}>
+          <ArrowLeft size={20} strokeWidth={2.2} />
         </button>
         <h1 className="text-4xl font-semibold tracking-[-0.02em]">Создать мероприятие</h1>
         <p className="mt-3 max-w-2xl text-[16px] leading-7 text-slate-600">
@@ -343,33 +344,67 @@ function EventPage({ eventId }: { eventId: string }) {
   const [live, setLive] = useState<AnyRecord | null>(null);
   const [qrOpen, setQrOpen] = useState(false);
   const [error, setError] = useState("");
-
-  const load = () => {
-    apiClient.getOrganizerEvent(eventId).then((data) => setEventData(data as AnyRecord)).catch((requestError) => setError(requestError instanceof Error ? requestError.message : "Ошибка"));
-    apiClient.getOrganizerLive(eventId).then((data) => setLive(data as AnyRecord)).catch(() => undefined);
-  };
+  const [reportNotice, setReportNotice] = useState("");
 
   useEffect(() => {
-    load();
-    const timer = window.setInterval(() => {
-      apiClient.getOrganizerLive(eventId).then((data) => setLive(data as AnyRecord)).catch(() => undefined);
-    }, 5000);
-    return () => window.clearInterval(timer);
+    let cancelled = false;
+
+    const loadInitial = async () => {
+      setError("");
+      try {
+        const [eventInfo, liveData] = await Promise.all([
+          apiClient.getOrganizerEvent(eventId),
+          apiClient.getOrganizerLive(eventId),
+        ]);
+        if (cancelled) return;
+        setEventData(eventInfo as AnyRecord);
+        setLive(liveData as AnyRecord);
+      } catch (requestError) {
+        if (!cancelled) setError(requestError instanceof Error ? requestError.message : "Ошибка");
+      }
+    };
+
+    const refreshLive = async () => {
+      if (document.hidden) return;
+      try {
+        const liveData = await apiClient.getOrganizerLive(eventId);
+        if (!cancelled) setLive(liveData as AnyRecord);
+      } catch {
+        // Live metrics are best-effort; the page keeps the last good snapshot.
+      }
+    };
+
+    const refreshWhenVisible = () => {
+      if (!document.hidden) void refreshLive();
+    };
+
+    void loadInitial();
+    const timer = window.setInterval(() => void refreshLive(), 8000);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+    };
   }, [eventId]);
 
   if (error) return <Shell><EmptyState title="Не удалось открыть мероприятие" text={error} /></Shell>;
-  if (!eventData) return <Shell><EmptyState title="Загружаем мероприятие" text="Собираем ссылки, QR и live-метрики..." /></Shell>;
+  if (!eventData) return <Shell><OrganizerSkeleton title="Загружаем мероприятие" /></Shell>;
 
   const invite = eventData.invite || {};
   const metrics = live?.liveMetrics || {};
   const funnel = live?.funnel || {};
   const overview = eventData.overview || {};
+  const showPilotNotice = () => {
+    setReportNotice("Выгрузка отчета в PDF будет доступна в пилоте.");
+    window.setTimeout(() => setReportNotice(""), 2600);
+  };
 
   return (
     <Shell>
       <header className="organizer-surface rounded-[32px] p-6 sm:p-8">
-        <button className="mb-6 text-[14px] font-semibold text-[#0066cc]" onClick={() => navigate("/organizer")}>
-          Назад к кабинету
+        <button aria-label="Назад к кабинету" className="organizer-back-button mb-6" onClick={() => navigate("/organizer")}>
+          <ArrowLeft size={20} strokeWidth={2.2} />
         </button>
         <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
           <div>
@@ -383,11 +418,13 @@ function EventPage({ eventId }: { eventId: string }) {
               {formatDate(eventData.event.starts_at)} · {eventData.event.status || "draft"}
             </p>
           </div>
-          <div className="flex flex-col gap-3 sm:flex-row">
-            <Button variant="secondary" onClick={() => setQrOpen(true)}>
-              <QrCode size={18} /> Показать QR
+          <div className="organizer-action-row">
+            <Button className="organizer-action-button" onClick={() => copy(invite.webJoinUrl)}>
+              <Copy size={17} /> Скопировать ссылку
             </Button>
-            <Button onClick={() => copy(invite.webJoinUrl)}>Скопировать ссылку</Button>
+            <Button className="organizer-action-button" variant="secondary" onClick={() => setQrOpen(true)}>
+              <QrCode size={17} /> Показать QR
+            </Button>
           </div>
         </div>
       </header>
@@ -397,19 +434,9 @@ function EventPage({ eventId }: { eventId: string }) {
           <h2 className="text-2xl font-semibold">Приглашение участников</h2>
           <div className="mt-5 grid gap-3">
             <CopyRow label="Invite code" value={invite.inviteCode} />
+            <CopyRow label="Действует до" value={invite.expiresAt ? new Date(invite.expiresAt).toLocaleString("ru-RU") : "—"} />
             <CopyRow label="Web link" value={invite.webJoinUrl} />
             <CopyRow label="Telegram Mini App" value={invite.telegramMiniAppUrl || "Telegram bot username не задан"} />
-          </div>
-          <div className="mt-5 flex flex-wrap gap-3">
-            <Button variant="secondary" onClick={() => copy(invite.webJoinUrl)}>
-              <Copy size={17} /> Скопировать ссылку
-            </Button>
-            <Button variant="secondary" onClick={() => copy(invite.telegramMiniAppUrl || invite.webJoinUrl)}>
-              <Copy size={17} /> Скопировать Telegram-ссылку
-            </Button>
-            <Button onClick={() => setQrOpen(true)}>
-              <QrCode size={17} /> Показать QR
-            </Button>
           </div>
         </Card>
         <Card className="p-5">
@@ -486,7 +513,7 @@ function EventPage({ eventId }: { eventId: string }) {
 
       <section className="mt-5">
         <Card className="p-5 sm:p-6">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <p className="text-[13px] font-semibold uppercase text-[#0066cc]">Финальный отчет</p>
               <h2 className="mt-2 text-3xl font-semibold tracking-[-0.02em]">Отчет по нетворкингу</h2>
@@ -494,10 +521,15 @@ function EventPage({ eventId }: { eventId: string }) {
                 Сводка собирается из действий участников: сохраненные знакомства, напоминания, отправленные сообщения, встречи и intro.
               </p>
             </div>
-            <Button variant="secondary" onClick={() => copy(reportSummary(eventData.event.name, metrics, overview))}>
-              <Copy size={17} /> Скопировать сводку
+            <Button className="organizer-report-button" onClick={showPilotNotice}>
+              <FileText size={17} /> Выгрузить отчет в PDF
             </Button>
           </div>
+          {reportNotice ? (
+            <div className="mt-4 rounded-[22px] border border-[#0087ff]/14 bg-white/62 px-4 py-3 text-[14px] font-medium text-[#0066cc] backdrop-blur-xl">
+              {reportNotice}
+            </div>
+          ) : null}
           <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
             <MiniMetric label="Знакомства" value={metrics.contactsSaved ?? overview.contacts_saved ?? 0} />
             <MiniMetric label="Напоминания" value={metrics.remindersCreated ?? 0} />
@@ -533,6 +565,28 @@ function EmptyState({ title, text }: { title: string; text: string }) {
       <h1 className="text-3xl font-semibold">{title}</h1>
       <p className="mt-3 text-[15px] leading-7 text-slate-600">{text}</p>
     </Card>
+  );
+}
+
+function OrganizerSkeleton({ title }: { title: string }) {
+  return (
+    <div className="space-y-5">
+      <Card className="p-6 sm:p-8">
+        <div className="h-8 w-44 animate-pulse rounded-full bg-white/70" />
+        <div className="mt-6 h-12 w-full max-w-xl animate-pulse rounded-full bg-white/75" />
+        <div className="mt-4 h-5 w-full max-w-md animate-pulse rounded-full bg-white/60" />
+        <p className="mt-6 text-[14px] font-semibold text-slate-500">{title}</p>
+      </Card>
+      <div className="grid gap-4 lg:grid-cols-3">
+        {[0, 1, 2].map((item) => (
+          <Card key={item} className="p-5">
+            <div className="h-5 w-24 animate-pulse rounded-full bg-white/70" />
+            <div className="mt-5 h-9 w-20 animate-pulse rounded-full bg-white/75" />
+            <div className="mt-4 h-4 w-32 animate-pulse rounded-full bg-white/60" />
+          </Card>
+        ))}
+      </div>
+    </div>
   );
 }
 

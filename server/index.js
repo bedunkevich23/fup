@@ -1,4 +1,5 @@
 import "./lib/env.js";
+import crypto from "node:crypto";
 import http from "node:http";
 import { URL } from "node:url";
 import { clearSessionCookie, readSessionCookie, sessionCookie } from "./lib/session.js";
@@ -13,16 +14,22 @@ import {
 } from "./lib/telegramOidc.js";
 import {
   answerTelegramCallbackQuery,
+  sendLifecycleNotification,
   sendTelegramReminder,
+  sendTelegramWelcome,
 } from "./lib/telegramBot.js";
 import {
   applyFollowupAction,
   archiveOrganizerEvent,
+  archiveContact,
+  cancelFollowup,
   createAppOpenedEvent,
   createAppSession,
   createContactWithFollowup,
+  createAnalyticsEvent,
   createOrganizationForOwner,
   createOrganizerEvent,
+  enqueueLifecycleNotifications,
   getCurrentUserFromSessionToken,
   getContacts,
   getCurrentUserDev,
@@ -30,6 +37,7 @@ import {
   getEventHome,
   getEventMembers,
   getFollowups,
+  getPendingBotNotifications,
   getPendingReminders,
   getMe,
   getOrgMe,
@@ -45,6 +53,8 @@ import {
   grantOrganizerAccessDev,
   isProfileCompleted,
   joinEvent,
+  markBotNotificationFailed,
+  markBotNotificationSent,
   markReminderFailed,
   markReminderSent,
   requireOrganizerAccess,
@@ -53,33 +63,76 @@ import {
   updateProfile,
   updateOrganizerEvent,
   upsertTelegramLoginUser,
+  upsertTelegramUser,
   upsertTelegramMiniAppUser,
 } from "./lib/repository.js";
 
 const port = Number(process.env.API_PORT || 8787);
 const isDev = process.env.NODE_ENV !== "production";
+const maxJsonBodyBytes = 1024 * 1024;
+
+const corsHeaders = () => ({
+  "Access-Control-Allow-Origin": process.env.WEBAPP_URL || "http://localhost:3000",
+  "Access-Control-Allow-Credentials": "true",
+  "Vary": "Origin",
+});
+
+const securityHeaders = () => ({
+  "X-Content-Type-Options": "nosniff",
+  "Referrer-Policy": "strict-origin-when-cross-origin",
+  "Cache-Control": "no-store",
+  ...(String(process.env.WEBAPP_URL || "").startsWith("https://")
+    ? { "Strict-Transport-Security": "max-age=31536000; includeSubDomains" }
+    : {}),
+});
 
 const json = (res, status, body, headers = {}) => {
   res.writeHead(status, {
     "Content-Type": "application/json; charset=utf-8",
-    "Access-Control-Allow-Origin": process.env.WEBAPP_URL || "http://localhost:3000",
-    "Access-Control-Allow-Credentials": "true",
+    ...corsHeaders(),
+    ...securityHeaders(),
     ...headers,
   });
   res.end(JSON.stringify(body));
 };
 
+const apiError = (message, status = 500) => {
+  const error = new Error(message);
+  error.status = status;
+  return error;
+};
+
+const parseJsonBody = (raw) => {
+  if (!raw.length) return {};
+  try {
+    return JSON.parse(raw.toString("utf8"));
+  } catch {
+    throw apiError("Некорректный JSON в запросе", 400);
+  }
+};
+
 const readJson = async (req) => {
   if (req.body !== undefined) {
-    if (typeof req.body === "string") return req.body ? JSON.parse(req.body) : {};
-    if (Buffer.isBuffer(req.body)) return req.body.length ? JSON.parse(req.body.toString("utf8")) : {};
+    if (typeof req.body === "string") {
+      if (Buffer.byteLength(req.body, "utf8") > maxJsonBodyBytes) throw apiError("Слишком большой запрос", 413);
+      return parseJsonBody(Buffer.from(req.body));
+    }
+    if (Buffer.isBuffer(req.body)) {
+      if (req.body.length > maxJsonBodyBytes) throw apiError("Слишком большой запрос", 413);
+      return parseJsonBody(req.body);
+    }
     return req.body || {};
   }
 
   const chunks = [];
-  for await (const chunk of req) chunks.push(chunk);
+  let totalBytes = 0;
+  for await (const chunk of req) {
+    totalBytes += chunk.length;
+    if (totalBytes > maxJsonBodyBytes) throw apiError("Слишком большой запрос", 413);
+    chunks.push(chunk);
+  }
   if (!chunks.length) return {};
-  return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  return parseJsonBody(Buffer.concat(chunks));
 };
 
 const redirect = (res, location, headers = {}) => {
@@ -115,8 +168,10 @@ function requireSharedSecret(req, envName, headerName) {
   }
   const authorization = req.headers.authorization || "";
   const bearer = authorization.startsWith("Bearer ") ? authorization.slice("Bearer ".length) : "";
-  const provided = req.headers[headerName] || bearer;
-  if (provided !== expected) {
+  const provided = String(req.headers[headerName] || bearer || "");
+  const expectedBuffer = Buffer.from(expected);
+  const providedBuffer = Buffer.from(provided);
+  if (expectedBuffer.length !== providedBuffer.length || !crypto.timingSafeEqual(expectedBuffer, providedBuffer)) {
     const error = new Error("Forbidden");
     error.status = 403;
     throw error;
@@ -131,8 +186,20 @@ const snoozeUntil = () => {
 
 async function processReminderCron(req, res) {
   requireSharedSecret(req, "CRON_SECRET", "x-cron-secret");
+  await enqueueLifecycleNotifications().catch((error) => {
+    console.warn("Lifecycle notification enqueue skipped:", error.message);
+  });
   const pending = await getPendingReminders();
-  const result = { ok: true, processed: pending.length, sent: 0, failed: 0 };
+  const pendingBotNotifications = await getPendingBotNotifications().catch((error) => {
+    console.warn("Lifecycle notifications fetch skipped:", error.message);
+    return [];
+  });
+  const result = {
+    ok: true,
+    processed: pending.length + pendingBotNotifications.length,
+    reminders: { processed: pending.length, sent: 0, failed: 0 },
+    lifecycle: { processed: pendingBotNotifications.length, sent: 0, failed: 0 },
+  };
 
   for (const reminder of pending) {
     const followup = reminder.followups || {};
@@ -153,14 +220,41 @@ async function processReminderCron(req, res) {
         followupId: followup.id,
         telegramMessageId: message.message_id,
       });
-      result.sent += 1;
+      result.reminders.sent += 1;
     } catch (error) {
       await markReminderFailed({
         reminderId: reminder.id,
         followupId: followup.id,
         errorMessage: error.message,
       });
-      result.failed += 1;
+      result.reminders.failed += 1;
+    }
+  }
+
+  for (const notification of pendingBotNotifications) {
+    const user = notification.users || {};
+    const event = notification.events || {};
+    try {
+      const telegramId = notification.telegram_chat_id || user.telegram_chat_id || user.telegram_id;
+      if (!telegramId) throw new Error("Telegram chat is not available");
+      const message = await sendLifecycleNotification({
+        telegramId,
+        type: notification.notification_type,
+        user,
+        event,
+        metadata: notification.metadata || {},
+      });
+      await markBotNotificationSent({
+        notificationId: notification.id,
+        telegramMessageId: message.message_id,
+      });
+      result.lifecycle.sent += 1;
+    } catch (error) {
+      await markBotNotificationFailed({
+        notificationId: notification.id,
+        errorMessage: error.message,
+      });
+      result.lifecycle.failed += 1;
     }
   }
 
@@ -296,8 +390,19 @@ const routes = [
         userId: user.id,
         action: body.action,
         snoozeUntil: body.snoozeUntil,
+        nextReminderAt: body.nextReminderAt,
       }),
     );
+  }),
+
+  route("DELETE", /^\/api\/contacts\/(?<contactId>[^/]+)$/, async (req, res, { contactId }) => {
+    const user = await requireUser(req);
+    return json(res, 200, { contact: await archiveContact({ contactId, userId: user.id }) });
+  }),
+
+  route("DELETE", /^\/api\/followups\/(?<followupId>[^/]+)$/, async (req, res, { followupId }) => {
+    const user = await requireUser(req);
+    return json(res, 200, { followup: await cancelFollowup({ followupId, userId: user.id }) });
   }),
 
   route("GET", /^\/api\/cron\/reminders$/, processReminderCron),
@@ -306,6 +411,23 @@ const routes = [
   route("POST", /^\/api\/telegram\/webhook$/, async (req, res) => {
     requireSharedSecret(req, "TELEGRAM_WEBHOOK_SECRET", "x-telegram-bot-api-secret-token");
     const body = await readJson(req);
+    const message = body.message;
+    const text = String(message?.text || "");
+    if (message?.from?.id && text.startsWith("/start")) {
+      const user = await upsertTelegramUser({
+        telegram_id: message.from.id,
+        username: message.from.username,
+        first_name: message.from.first_name,
+        last_name: message.from.last_name,
+      });
+      await createAnalyticsEvent({ event_id: null, user_id: user.id, action: "bot_started", entity_id: user.id }).catch(() => undefined);
+      const sent = await sendTelegramWelcome({
+        telegramId: message.chat?.id || message.from.id,
+        firstName: message.from.first_name,
+      });
+      return json(res, 200, { ok: true, messageId: sent.message_id });
+    }
+
     const callback = body.callback_query;
     if (!callback?.data?.startsWith("fup:")) return json(res, 200, { ok: true });
 
@@ -461,8 +583,8 @@ export const handleApiRequest = async (req, res) => {
     const url = new URL(req.url, `http://${req.headers.host}`);
     if (req.method === "OPTIONS") {
       res.writeHead(204, {
-        "Access-Control-Allow-Origin": process.env.WEBAPP_URL || "http://localhost:3000",
-        "Access-Control-Allow-Credentials": "true",
+        ...corsHeaders(),
+        ...securityHeaders(),
         "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Cron-Secret, X-Telegram-Bot-Api-Secret-Token",
         "Access-Control-Allow-Methods": "GET,POST,PATCH,DELETE,OPTIONS",
       });
@@ -473,7 +595,9 @@ export const handleApiRequest = async (req, res) => {
     return await matched.handler(req, res, matched.params);
   } catch (error) {
     console.error(error);
-    return json(res, error.status || 500, { error: error.message || "Internal Server Error" });
+    const status = error.status || 500;
+    const message = status >= 500 && !isDev ? "Internal Server Error" : error.message || "Internal Server Error";
+    return json(res, status, { error: message });
   }
 };
 

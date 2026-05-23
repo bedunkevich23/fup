@@ -17,6 +17,18 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [react()],
+    build: {
+      cssCodeSplit: true,
+      sourcemap: false,
+      rollupOptions: {
+        output: {
+          manualChunks: {
+            react: ["react", "react-dom"],
+            ui: ["lucide-react", "qrcode.react"],
+          },
+        },
+      },
+    },
     server: {
       allowedHosts,
       proxy: {

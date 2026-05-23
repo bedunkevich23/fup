@@ -8,7 +8,6 @@ const profileText = (value) => String(value || "").trim();
 const hasRequiredProfileFields = (profile) =>
   Boolean(
     profileText(profile?.first_name) &&
-      profileText(profile?.last_name) &&
       profileText(profile?.role) &&
       profileText(profile?.company) &&
       profileText(profile?.looking_for) &&
@@ -51,6 +50,18 @@ const tagsFrom = (text) =>
     .map((item) => item.trim())
     .filter(Boolean)
     .slice(0, 12);
+const sameText = (left, right) => profileText(left).toLowerCase() === profileText(right).toLowerCase();
+const recentTimestamp = (minutes) => new Date(Date.now() - minutes * 60 * 1000).toISOString();
+const INVITE_CODE_TTL_MS = 24 * 60 * 60 * 1000;
+const inviteCodeFrom = () => Math.random().toString(36).slice(2, 8).toUpperCase();
+const eventSettings = (event = {}) => event.settings && typeof event.settings === "object" && !Array.isArray(event.settings) ? event.settings : {};
+const inviteExpiresAt = (fromTime = Date.now()) => new Date(fromTime + INVITE_CODE_TTL_MS).toISOString();
+const inviteExpiresAtOf = (event = {}) => {
+  const configured = eventSettings(event).invite_code_expires_at;
+  const createdAt = Date.parse(event.created_at || "");
+  return configured || inviteExpiresAt(Number.isNaN(createdAt) ? Date.now() : createdAt);
+};
+const inviteExpired = (event = {}) => Date.parse(inviteExpiresAtOf(event)) <= Date.now();
 const organizationTypes = new Set([
   "accelerator",
   "founder_community",
@@ -519,6 +530,11 @@ export async function supabaseHealthCheck() {
 
 export async function upsertTelegramUser(tg) {
   if (hasSupabaseEnv) {
+    const existing = await from("users")
+      .select("id, bot_started_at")
+      .eq("telegram_id", String(tg.telegram_id))
+      .maybeSingle();
+    if (existing.error) throw existing.error;
     const payload = {
       telegram_id: String(tg.telegram_id),
       telegram_username: tg.username,
@@ -526,6 +542,8 @@ export async function upsertTelegramUser(tg) {
       first_name: tg.first_name,
       last_name: tg.last_name,
       avatar_url: tg.photo_url,
+      bot_started_at: existing.data?.bot_started_at || timestamp(),
+      bot_last_seen_at: timestamp(),
       updated_at: timestamp(),
     };
     const { data, error } = await from("users")
@@ -555,6 +573,8 @@ export async function upsertTelegramUser(tg) {
     first_name: tg.first_name,
     last_name: tg.last_name,
     avatar_url: tg.photo_url,
+    bot_started_at: user.bot_started_at || timestamp(),
+    bot_last_seen_at: timestamp(),
     updated_at: timestamp(),
   });
   return user;
@@ -595,6 +615,7 @@ export async function findEvent({ inviteCode, eventSlug, eventId }) {
 export async function joinEvent({ userId, inviteCode, eventSlug, eventId }) {
   const event = await findEvent({ inviteCode, eventSlug, eventId });
   if (!event) return { event: null, memberStatus: "event_not_found" };
+  if (inviteCode && inviteExpired(event)) return { event: null, memberStatus: "invite_expired" };
 
   if (hasSupabaseEnv) {
     const { data: existing } = await from("event_members")
@@ -630,7 +651,11 @@ export async function getMe(userId) {
   const user = await getUserById(userId);
   const organizerAccess = await getOrganizerAccess(userId);
   if (hasSupabaseEnv) {
-    const { data, error } = await from("event_members").select("*, events(*)").eq("user_id", userId);
+    const { data, error } = await from("event_members")
+      .select("*, events(*)")
+      .eq("user_id", userId)
+      .order("last_activity_at", { ascending: false, nullsFirst: false })
+      .order("joined_at", { ascending: false });
     if (error) throw error;
     return {
       user,
@@ -642,6 +667,7 @@ export async function getMe(userId) {
   }
   const activeEvents = dev.event_members
     .filter((member) => member.user_id === userId)
+    .sort((left, right) => (right.last_activity_at || right.joined_at || "").localeCompare(left.last_activity_at || left.joined_at || ""))
     .map((member) => dev.events.find((event) => event.id === member.event_id));
   return { user, profileCompleted: profileCompleted(user), activeEvents, isOrganizer: organizerAccess.length > 0, organizerAccess };
 }
@@ -817,6 +843,28 @@ export async function createContactWithFollowup({ eventId, userId, input }) {
         throw error;
       }
     }
+    if (contact.source === "manual") {
+      const { data: recentContacts, error: recentContactsError } = await from("contacts")
+        .select("id, contact_name, contact_username, context, next_step_text, source, created_at")
+        .eq("event_id", eventId)
+        .eq("owner_user_id", userId)
+        .eq("source", "manual")
+        .gte("created_at", recentTimestamp(2))
+        .order("created_at", { ascending: false })
+        .limit(8);
+      if (recentContactsError) throw recentContactsError;
+      const duplicate = recentContacts?.find((item) =>
+        sameText(item.contact_name, contact.contact_name) &&
+        sameText(item.contact_username, contact.contact_username) &&
+        sameText(item.context, contact.context) &&
+        sameText(item.next_step_text, contact.next_step_text),
+      );
+      if (duplicate) {
+        const error = new Error("Это знакомство уже сохранено");
+        error.status = 409;
+        throw error;
+      }
+    }
     const { id: _contactId, ...contactPayload } = contact;
     const { data: contactData, error: contactError } = await from("contacts").insert(contactPayload).select("*").single();
     if (contactError) throw contactError;
@@ -845,6 +893,21 @@ export async function createContactWithFollowup({ eventId, userId, input }) {
     return { contact: contactData, followup: followupData, reminder: reminderData };
   }
 
+  const duplicateManual = contact.source === "manual" && dev.contacts.find((item) =>
+    item.event_id === eventId &&
+    item.owner_user_id === userId &&
+    item.source === "manual" &&
+    item.created_at >= recentTimestamp(2) &&
+    sameText(item.contact_name, contact.contact_name) &&
+    sameText(item.contact_username, contact.contact_username) &&
+    sameText(item.context, contact.context) &&
+    sameText(item.next_step_text, contact.next_step_text),
+  );
+  if (duplicateManual) {
+    const error = new Error("Это знакомство уже сохранено");
+    error.status = 409;
+    throw error;
+  }
   dev.contacts.push(contact);
   dev.followups.push(followup);
   dev.reminders.push(reminder);
@@ -862,13 +925,67 @@ export async function getContacts({ eventId, userId }) {
       .select("*")
       .eq("event_id", eventId)
       .eq("owner_user_id", userId)
+      .or("is_archived.is.null,is_archived.eq.false")
       .order("created_at", { ascending: false });
     if (error) throw error;
-    return data;
+    return withTargetUsers(data);
   }
   return dev.contacts
-    .filter((contact) => contact.event_id === eventId && contact.owner_user_id === userId)
-    .sort((a, b) => b.created_at.localeCompare(a.created_at));
+    .filter((contact) => contact.event_id === eventId && contact.owner_user_id === userId && !contact.is_archived)
+    .sort((a, b) => b.created_at.localeCompare(a.created_at))
+    .map((contact) => ({ ...contact, target_user: dev.users.find((user) => user.id === contact.target_user_id) }));
+}
+
+export async function archiveContact({ contactId, userId }) {
+  if (hasSupabaseEnv) {
+    const { data: contact, error } = await from("contacts")
+      .update({ is_archived: true, updated_at: timestamp() })
+      .eq("id", contactId)
+      .eq("owner_user_id", userId)
+      .select("*")
+      .maybeSingle();
+    if (error) throw error;
+    if (!contact) {
+      const notFound = new Error("Контакт не найден");
+      notFound.status = 404;
+      throw notFound;
+    }
+    const { data: followups } = await from("followups").select("id").eq("contact_id", contactId).eq("owner_user_id", userId);
+    const followupIds = (followups || []).map((item) => item.id);
+    await from("followups")
+      .update({ status: "cancelled", updated_at: timestamp() })
+      .eq("contact_id", contactId)
+      .eq("owner_user_id", userId)
+      .in("status", ["scheduled", "reminder_sent", "snoozed"]);
+    if (followupIds.length) {
+      await from("reminders")
+        .update({ status: "cancelled", cancelled_at: timestamp(), updated_at: timestamp() })
+        .eq("user_id", userId)
+        .eq("status", "pending")
+        .in("followup_id", followupIds);
+    }
+    await createAnalyticsEvent({ event_id: contact.event_id, user_id: userId, action: "contact_archived", entity_id: contactId });
+    return contact;
+  }
+  const contact = dev.contacts.find((item) => item.id === contactId && item.owner_user_id === userId);
+  if (!contact) throw new Error("Контакт не найден");
+  Object.assign(contact, { is_archived: true, updated_at: timestamp() });
+  dev.followups
+    .filter((followup) => followup.contact_id === contactId && followup.owner_user_id === userId && ["scheduled", "reminder_sent", "snoozed"].includes(followup.status))
+    .forEach((followup) => {
+      followup.status = "cancelled";
+      followup.updated_at = timestamp();
+    });
+  return contact;
+}
+
+async function withTargetUsers(contacts) {
+  const targetIds = Array.from(new Set((contacts || []).map((contact) => contact.target_user_id).filter(Boolean)));
+  if (!targetIds.length) return contacts || [];
+  const { data: users, error } = await from("users").select("*").in("id", targetIds);
+  if (error) throw error;
+  const userById = new Map((users || []).map((user) => [user.id, user]));
+  return (contacts || []).map((contact) => ({ ...contact, target_user: userById.get(contact.target_user_id) }));
 }
 
 export async function getFollowups({ eventId, userId }) {
@@ -880,13 +997,18 @@ export async function getFollowups({ eventId, userId }) {
           .eq("owner_user_id", userId)
           .order("due_at", { ascending: true });
         if (error) throw error;
-        return data.map((item) => ({ ...item, remind_at: item.due_at, contact: item.contacts }));
+        const contacts = await withTargetUsers(data.map((item) => item.contacts).filter(Boolean));
+        const contactById = new Map(contacts.map((contact) => [contact.id, contact]));
+        return data.map((item) => ({ ...item, remind_at: item.due_at, contact: contactById.get(item.contact_id) || item.contacts }));
       })()
     : dev.followups
         .filter((followup) => followup.event_id === eventId && followup.owner_user_id === userId)
         .map((followup) => ({
           ...followup,
-          contact: dev.contacts.find((contact) => contact.id === followup.contact_id),
+          contact: (() => {
+            const contact = dev.contacts.find((item) => item.id === followup.contact_id);
+            return contact ? { ...contact, target_user: dev.users.find((user) => user.id === contact.target_user_id) } : contact;
+          })(),
         }));
   const today = new Date().toDateString();
   return {
@@ -930,7 +1052,7 @@ export async function createAnalyticsEvent(event) {
   return payload;
 }
 
-export async function applyFollowupAction({ followupId, userId, action, snoozeUntil }) {
+export async function applyFollowupAction({ followupId, userId, action, snoozeUntil, nextReminderAt }) {
   if (action === "sent") action = "message_sent";
   if (action === "meeting") action = "meeting_booked";
   if (action === "intro") action = "person_introduced";
@@ -1022,6 +1144,40 @@ export async function applyFollowupAction({ followupId, userId, action, snoozeUn
         .eq("followup_id", followupId)
         .eq("status", "pending");
     }
+    let nextFollowup = null;
+    let nextReminder = null;
+    if (nextReminderAt && ["message_sent", "meeting_booked"].includes(action)) {
+      const nextDueAt = new Date(nextReminderAt);
+      if (Number.isNaN(nextDueAt.getTime())) {
+        const invalid = new Error("Дата следующего напоминания не распознана");
+        invalid.status = 400;
+        throw invalid;
+      }
+      const { data: followupData, error: nextFollowupError } = await from("followups").insert({
+        event_id: followup.event_id,
+        contact_id: followup.contact_id,
+        owner_user_id: followup.owner_user_id,
+        status: "scheduled",
+        next_step_type: followup.next_step_type || "write_message",
+        next_step_text: followup.next_step_text || "Вернуться к контакту",
+        due_at: nextDueAt.toISOString(),
+        created_at: timestamp(),
+      }).select("*").single();
+      if (nextFollowupError) throw nextFollowupError;
+      const { data: reminderData, error: nextReminderError } = await from("reminders").insert({
+        event_id: followup.event_id,
+        user_id: followup.owner_user_id,
+        followup_id: followupData.id,
+        scheduled_at: nextDueAt.toISOString(),
+        status: "pending",
+        created_at: timestamp(),
+      }).select("*").single();
+      if (nextReminderError) throw nextReminderError;
+      nextFollowup = followupData;
+      nextReminder = reminderData;
+      await createAnalyticsEvent({ event_id: followup.event_id, user_id: userId, action: "followup_created", entity_id: followupData.id });
+      await createAnalyticsEvent({ event_id: followup.event_id, user_id: userId, action: "reminder_created", entity_id: reminderData.id });
+    }
     const analyticsType = {
       message_sent: "followup_completed",
       meeting_booked: "result_meeting_booked",
@@ -1030,7 +1186,7 @@ export async function applyFollowupAction({ followupId, userId, action, snoozeUn
       not_relevant: "followup_missed",
     }[action];
     await createAnalyticsEvent({ event_id: followup.event_id, user_id: userId, action: analyticsType, entity_id: followupId });
-    return { followup: updated, outcome: createdOutcome };
+    return { followup: updated, outcome: createdOutcome, nextFollowup, nextReminder };
   }
 
   const followup = dev.followups.find((item) => item.id === followupId && item.owner_user_id === userId);
@@ -1071,6 +1227,33 @@ export async function applyFollowupAction({ followupId, userId, action, snoozeUn
       created_at: timestamp(),
     });
   }
+  let nextFollowup = null;
+  let nextReminder = null;
+  if (nextReminderAt && ["message_sent", "meeting_booked"].includes(action)) {
+    nextFollowup = {
+      id: id("fup"),
+      event_id: followup.event_id,
+      contact_id: followup.contact_id,
+      owner_user_id: followup.owner_user_id,
+      status: "scheduled",
+      next_step_type: followup.next_step_type || "write_message",
+      next_step_text: followup.next_step_text || "Вернуться к контакту",
+      due_at: nextReminderAt,
+      remind_at: nextReminderAt,
+      created_at: timestamp(),
+    };
+    nextReminder = {
+      id: id("rem"),
+      event_id: followup.event_id,
+      user_id: followup.owner_user_id,
+      followup_id: nextFollowup.id,
+      scheduled_at: nextReminderAt,
+      status: "pending",
+      created_at: timestamp(),
+    };
+    dev.followups.push(nextFollowup);
+    dev.reminders.push(nextReminder);
+  }
   const analyticsType = {
     message_sent: "followup_completed",
     meeting_booked: "result_meeting_booked",
@@ -1079,7 +1262,41 @@ export async function applyFollowupAction({ followupId, userId, action, snoozeUn
     not_relevant: "followup_missed",
   }[action];
   dev.analytics_events.push({ id: id("evt"), event_id: followup.event_id, user_id: userId, type: analyticsType, action: analyticsType, entity_id: followupId, created_at: timestamp() });
-  return { followup, outcome: outcomeByAction[action] ? dev.outcomes.at(-1) : null };
+  return { followup, outcome: outcomeByAction[action] ? dev.outcomes.at(-1) : null, nextFollowup, nextReminder };
+}
+
+export async function cancelFollowup({ followupId, userId }) {
+  if (hasSupabaseEnv) {
+    const { data: followup, error } = await from("followups")
+      .update({ status: "cancelled", updated_at: timestamp() })
+      .eq("id", followupId)
+      .eq("owner_user_id", userId)
+      .select("*")
+      .maybeSingle();
+    if (error) throw error;
+    if (!followup) {
+      const notFound = new Error("Задача не найдена");
+      notFound.status = 404;
+      throw notFound;
+    }
+    await from("reminders")
+      .update({ status: "cancelled", cancelled_at: timestamp(), updated_at: timestamp() })
+      .eq("followup_id", followupId)
+      .eq("status", "pending");
+    await createAnalyticsEvent({ event_id: followup.event_id, user_id: userId, action: "followup_cancelled", entity_id: followupId });
+    return followup;
+  }
+  const followup = dev.followups.find((item) => item.id === followupId && item.owner_user_id === userId);
+  if (!followup) throw new Error("Задача не найдена");
+  Object.assign(followup, { status: "cancelled", updated_at: timestamp() });
+  dev.reminders
+    .filter((item) => item.followup_id === followupId && item.status === "pending")
+    .forEach((item) => {
+      item.status = "cancelled";
+      item.cancelled_at = timestamp();
+      item.updated_at = timestamp();
+    });
+  return followup;
 }
 
 export async function getPendingReminders(nowIso = timestamp()) {
@@ -1101,6 +1318,92 @@ export async function getPendingReminders(nowIso = timestamp()) {
       },
       users: dev.users.find((user) => user.id === reminder.user_id),
     }));
+}
+
+export async function enqueueLifecycleNotifications() {
+  if (hasSupabaseEnv) {
+    const { error } = await supabaseAdmin.rpc("fup_enqueue_lifecycle_notifications");
+    if (error) throw error;
+    return { ok: true };
+  }
+  return { ok: true };
+}
+
+export async function getPendingBotNotifications(nowIso = timestamp()) {
+  if (hasSupabaseEnv) {
+    const { data, error } = await from("bot_notifications")
+      .select("*, users(*), events(*)")
+      .eq("status", "pending")
+      .lte("scheduled_at", nowIso)
+      .order("scheduled_at", { ascending: true })
+      .limit(50);
+    if (error) throw error;
+    return data || [];
+  }
+  return dev.bot_notifications
+    .filter((notification) => notification.status === "pending" && notification.scheduled_at <= nowIso)
+    .map((notification) => ({
+      ...notification,
+      users: dev.users.find((user) => user.id === notification.user_id),
+      events: dev.events.find((event) => event.id === notification.event_id),
+    }));
+}
+
+export async function markBotNotificationSent({ notificationId, telegramMessageId }) {
+  if (hasSupabaseEnv) {
+    const { data, error } = await from("bot_notifications")
+      .update({ status: "sent", sent_at: timestamp(), telegram_message_id: telegramMessageId, updated_at: timestamp() })
+      .eq("id", notificationId)
+      .select("*")
+      .single();
+    if (error) throw error;
+    await from("bot_messages").insert({
+      event_id: data.event_id,
+      user_id: data.user_id,
+      telegram_message_id: telegramMessageId,
+      message_type: data.notification_type,
+      status: "sent",
+      sent_at: timestamp(),
+      created_at: timestamp(),
+    });
+    await createAnalyticsEvent({ event_id: data.event_id, user_id: data.user_id, action: `bot_${data.notification_type}_sent`, entity_id: notificationId });
+    return data;
+  }
+  const notification = dev.bot_notifications.find((item) => item.id === notificationId);
+  if (notification) Object.assign(notification, { status: "sent", sent_at: timestamp(), telegram_message_id: telegramMessageId });
+  return notification;
+}
+
+export async function markBotNotificationFailed({ notificationId, errorMessage }) {
+  if (hasSupabaseEnv) {
+    const { data, error } = await from("bot_notifications")
+      .update({
+        status: "failed",
+        failed_at: timestamp(),
+        error_message: String(errorMessage || "Telegram delivery failed"),
+        updated_at: timestamp(),
+      })
+      .eq("id", notificationId)
+      .select("*")
+      .maybeSingle();
+    if (error) throw error;
+    if (data) {
+      await from("bot_messages").insert({
+        event_id: data.event_id,
+        user_id: data.user_id,
+        message_type: data.notification_type,
+        status: "failed",
+        error_message: String(errorMessage || "Telegram delivery failed"),
+        failed_at: timestamp(),
+        created_at: timestamp(),
+      });
+      await createAnalyticsEvent({ event_id: data.event_id, user_id: data.user_id, action: `bot_${data.notification_type}_failed`, entity_id: notificationId });
+    }
+    return data;
+  }
+  const notification = dev.bot_notifications.find((item) => item.id === notificationId);
+  if (notification) Object.assign(notification, { status: "failed", failed_at: timestamp(), error_message: String(errorMessage || "Telegram delivery failed") });
+  return notification;
 }
 
 export async function markReminderSent({ reminderId, followupId, telegramMessageId }) {
@@ -1180,7 +1483,7 @@ export async function createOrganizerEvent({ userId, input }) {
     organizationId: input.organizationId || input.organization_id,
     allowedRoles: ["owner", "admin", "manager"],
   });
-  const inviteCode = input.inviteCode || Math.random().toString(36).slice(2, 8).toUpperCase();
+  const inviteCode = input.inviteCode || inviteCodeFrom();
   const slug = input.slug || `${input.name}-${inviteCode}`.toLowerCase().replace(/[^a-z0-9а-я]+/gi, "-").replace(/^-|-$/g, "");
   const event = {
     id: id("ev"),
@@ -1197,7 +1500,10 @@ export async function createOrganizerEvent({ userId, input }) {
     goal_contacts_per_user: input.goalContactsPerUser,
     goal_messages_per_user: input.goalMessagesPerUser,
     goal_results_per_user: input.goalResultsPerUser,
-    settings: input.settings || {},
+    settings: {
+      ...(input.settings || {}),
+      invite_code_expires_at: inviteExpiresAt(),
+    },
     status: "draft",
     goals: input.goals || [],
     slug,
@@ -1258,6 +1564,25 @@ function eventResponse(event) {
   };
 }
 
+async function refreshExpiredInvite(event) {
+  if (!event || !inviteExpired(event)) return event;
+  const updates = {
+    invite_code: inviteCodeFrom(),
+    settings: {
+      ...eventSettings(event),
+      invite_code_expires_at: inviteExpiresAt(),
+    },
+    updated_at: timestamp(),
+  };
+  if (hasSupabaseEnv) {
+    const { data, error } = await from("events").update(updates).eq("id", event.id).select("*").single();
+    if (error) throw error;
+    return data;
+  }
+  Object.assign(event, updates);
+  return event;
+}
+
 export function getInvitePayload(event) {
   const webappUrl = process.env.WEBAPP_URL || "http://localhost:3000";
   const bot = process.env.TELEGRAM_BOT_USERNAME;
@@ -1271,6 +1596,7 @@ export function getInvitePayload(event) {
     telegramMiniAppUrl,
     qrPayload: telegramMiniAppUrl || webJoinUrl,
     eventName: event.name,
+    expiresAt: inviteExpiresAtOf(event),
   };
 }
 
@@ -1306,7 +1632,7 @@ export async function getOrgMe(userId) {
 
 export async function getOrganizerEvent(userId, eventId) {
   await requireOrganizerAccess(userId, { eventId, allowedRoles: ["owner", "admin", "manager", "viewer"] });
-  const event = await findEvent({ eventId });
+  const event = await refreshExpiredInvite(await findEvent({ eventId }));
   const organization = hasSupabaseEnv
     ? (await from("organizations").select("*").eq("id", event.organization_id).single()).data
     : dev.organizations.find((org) => org.id === event.organization_id);
@@ -1364,7 +1690,7 @@ export async function archiveOrganizerEvent(userId, eventId) {
 
 export async function getOrganizerEventInvite(userId, eventId) {
   await requireOrganizerAccess(userId, { eventId, allowedRoles: ["owner", "admin", "manager", "viewer"] });
-  const event = await findEvent({ eventId });
+  const event = await refreshExpiredInvite(await findEvent({ eventId }));
   return getInvitePayload(event);
 }
 

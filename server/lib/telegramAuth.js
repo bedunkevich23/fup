@@ -4,6 +4,14 @@ const maxAuthAgeSeconds = 60 * 60 * 24;
 
 const hmacHex = (key, value) => crypto.createHmac("sha256", key).update(value).digest("hex");
 
+const safeEqualHex = (expected, provided) => {
+  if (typeof expected !== "string" || typeof provided !== "string") return false;
+  if (!/^[a-f0-9]+$/i.test(expected) || !/^[a-f0-9]+$/i.test(provided)) return false;
+  const expectedBuffer = Buffer.from(expected, "hex");
+  const providedBuffer = Buffer.from(provided, "hex");
+  return expectedBuffer.length === providedBuffer.length && crypto.timingSafeEqual(expectedBuffer, providedBuffer);
+};
+
 const sortDataCheckString = (entries) =>
   entries
     .filter(([key, value]) => key !== "hash" && value !== undefined && value !== null)
@@ -28,7 +36,7 @@ export function validateTelegramMiniAppInitData(initData, botToken) {
   const dataCheckString = sortDataCheckString([...params.entries()]);
   const secretKey = crypto.createHmac("sha256", "WebAppData").update(botToken).digest();
   const expectedHash = hmacHex(secretKey, dataCheckString);
-  if (!crypto.timingSafeEqual(Buffer.from(expectedHash, "hex"), Buffer.from(hash, "hex"))) {
+  if (!safeEqualHex(expectedHash, hash)) {
     throw new Error("Invalid Telegram Mini App initData hash");
   }
 
@@ -53,7 +61,7 @@ export function validateLoginWidgetPayload(payload, botToken) {
   const dataCheckString = sortDataCheckString(Object.entries(payload));
   const secretKey = crypto.createHash("sha256").update(botToken).digest();
   const expectedHash = hmacHex(secretKey, dataCheckString);
-  if (!crypto.timingSafeEqual(Buffer.from(expectedHash, "hex"), Buffer.from(hash, "hex"))) {
+  if (!safeEqualHex(expectedHash, hash)) {
     throw new Error("Invalid Telegram Login Widget hash");
   }
 

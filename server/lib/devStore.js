@@ -87,6 +87,7 @@ export const dev = {
   recommendations: [],
   analytics_events: [],
   bot_messages: [],
+  bot_notifications: [],
   reports: [],
 };
 

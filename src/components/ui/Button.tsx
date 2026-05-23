@@ -3,10 +3,10 @@ import type { ButtonHTMLAttributes, ReactNode } from "react";
 type ButtonVariant = "primary" | "secondary" | "ghost" | "soft";
 
 const variants: Record<ButtonVariant, string> = {
-  primary: "liquid-blue text-white hover:brightness-[1.04]",
-  secondary: "liquid-control text-[#0066cc] hover:bg-white/70",
-  ghost: "text-[#0066cc] hover:bg-white/48",
-  soft: "liquid-control text-[#1d1d1f] hover:bg-white/70",
+  primary: "border border-[#0087ff] bg-[#0087ff] text-white hover:bg-[#0077e6]",
+  secondary: "border border-white/72 bg-white/68 text-[#0087ff] backdrop-blur-xl hover:bg-white/84",
+  ghost: "text-[#6f7780] hover:bg-white/48",
+  soft: "border border-[#0087ff]/18 bg-white/64 text-[#0066cc] backdrop-blur-xl hover:border-[#0087ff]/28 hover:bg-white/82",
 };
 
 export function Button({
@@ -20,7 +20,7 @@ export function Button({
 }) {
   return (
     <button
-      className={`button-press inline-flex h-12 items-center justify-center gap-2 rounded-[24px] px-5 text-center text-[14px] font-semibold leading-tight outline-none ring-[#0071e3]/20 transition focus-visible:ring-4 ${variants[variant]} ${className}`}
+      className={`button-press inline-flex h-11 items-center justify-center gap-2 rounded-full px-5 text-center text-[14px] font-medium leading-tight shadow-none outline-none ring-[#0071e3]/20 transition focus-visible:ring-4 ${variants[variant]} ${className}`}
       {...props}
     >
       {children}
