@@ -20,10 +20,10 @@ export function SegmentedControl<T extends string>({
             if (value !== option.value) hapticSelection();
             onChange(option.value);
           }}
-          className={`button-press flex h-11 flex-1 items-center justify-center whitespace-nowrap rounded-full px-4 text-[13px] font-semibold transition ${
+          className={`button-press flex h-11 flex-1 items-center justify-center whitespace-nowrap rounded-full border px-4 text-[13px] font-medium transition ${
             value === option.value
-              ? "bg-white/86 text-[#0066cc] shadow-[0_5px_16px_rgba(29,29,31,0.08)]"
-              : "text-slate-500 hover:bg-white/34 hover:text-[#1d1d1f]"
+              ? "border-white/70 bg-white/88 text-[#0087ff] shadow-[0_5px_16px_rgba(29,29,31,0.08)]"
+              : "border-transparent text-slate-500 hover:bg-white/34 hover:text-[#1d1d1f]"
           }`}
         >
           {option.label}

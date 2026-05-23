@@ -69,14 +69,15 @@ button:disabled {
 
 .button-press {
   transition:
-    transform 180ms ease,
+    transform 160ms cubic-bezier(0.2, 0, 0.2, 1),
     box-shadow 180ms ease,
     background-color 180ms ease,
-    border-color 180ms ease;
+    border-color 180ms ease,
+    opacity 180ms ease;
 }
 
 .button-press:active {
-  transform: scale(0.96);
+  transform: scale(0.97);
 }
 
 .liquid-control {
@@ -91,9 +92,8 @@ button:disabled {
 
 .liquid-blue {
   border: 1px solid rgba(0, 102, 204, 0.24);
-  background: linear-gradient(180deg, rgba(0, 113, 227, 0.92), rgba(0, 102, 204, 0.86));
+  background: #0087ff;
   box-shadow:
-    0 14px 32px rgba(0, 102, 204, 0.22),
     inset 0 1px 0 rgba(255, 255, 255, 0.32);
   backdrop-filter: blur(18px) saturate(180%);
   -webkit-backdrop-filter: blur(18px) saturate(180%);
@@ -140,6 +140,117 @@ button:disabled {
 
 .fup-screen-header {
   animation: shelfIn 360ms ease both;
+  padding-bottom: 4px;
+}
+
+.fup-intro-copy {
+  overflow: hidden;
+  transition:
+    max-height 520ms cubic-bezier(0.2, 0, 0.2, 1),
+    opacity 420ms ease,
+    transform 420ms ease,
+    margin-top 520ms ease;
+}
+
+.fup-intro-copy.is-visible {
+  max-height: 120px;
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.fup-intro-copy.is-hidden {
+  max-height: 0;
+  margin-top: 0;
+  opacity: 0;
+  transform: translateY(-4px);
+}
+
+.apple-icon-button {
+  position: relative;
+  overflow: hidden;
+  display: inline-flex;
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.78);
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at 28% 18%, rgba(255, 255, 255, 0.96), rgba(255, 255, 255, 0.2) 38%, transparent 58%),
+    linear-gradient(145deg, rgba(255, 255, 255, 0.58), rgba(230, 234, 240, 0.72));
+  color: rgba(29, 29, 31, 0.74);
+  box-shadow:
+    0 16px 34px rgba(23, 36, 51, 0.12),
+    inset 0 1px 1px rgba(255, 255, 255, 0.98),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.36);
+  backdrop-filter: blur(30px) saturate(190%);
+  -webkit-backdrop-filter: blur(30px) saturate(190%);
+  transition:
+    transform 180ms cubic-bezier(0.2, 0, 0.2, 1),
+    box-shadow 180ms ease,
+    background 180ms ease;
+}
+
+.apple-icon-button::after {
+  position: absolute;
+  inset: 1px;
+  border-radius: inherit;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.74), transparent 45%);
+  content: "";
+  pointer-events: none;
+}
+
+.apple-icon-button:active {
+  transform: scale(0.95);
+  box-shadow:
+    0 10px 24px rgba(23, 36, 51, 0.1),
+    inset 0 1px 1px rgba(255, 255, 255, 0.96);
+}
+
+.apple-icon-mask {
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: 16px;
+  height: 16px;
+  background: currentColor;
+  mask-position: center;
+  mask-repeat: no-repeat;
+  mask-size: contain;
+  -webkit-mask-position: center;
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-size: contain;
+}
+
+.apple-icon-button--back .apple-icon-mask {
+  width: 14px;
+  height: 18px;
+  transform: translateX(-1px);
+}
+
+.fup-reminder-backdrop {
+  background:
+    radial-gradient(circle at 50% 100%, rgba(255, 255, 255, 0.32), transparent 36%),
+    rgba(16, 24, 36, 0.18);
+  backdrop-filter: blur(18px) saturate(150%);
+  -webkit-backdrop-filter: blur(18px) saturate(150%);
+}
+
+.fup-reminder-sheet {
+  border: 1px solid rgba(255, 255, 255, 0.82);
+  border-radius: 34px;
+  background:
+    radial-gradient(circle at 26% 8%, rgba(255, 255, 255, 0.94), rgba(255, 255, 255, 0.16) 34%, transparent 56%),
+    linear-gradient(150deg, rgba(255, 255, 255, 0.72), rgba(245, 250, 255, 0.84));
+  box-shadow:
+    0 24px 60px rgba(15, 23, 42, 0.2),
+    0 1px 0 rgba(255, 255, 255, 0.82) inset,
+    0 -1px 0 rgba(255, 255, 255, 0.36) inset;
+  padding: 20px;
+  animation: sheetRise 360ms cubic-bezier(0.2, 0, 0.2, 1) both;
+  backdrop-filter: blur(34px) saturate(185%);
+  -webkit-backdrop-filter: blur(34px) saturate(185%);
 }
 
 .fup-panel,
@@ -147,7 +258,7 @@ button:disabled {
   border: 1px solid rgba(255, 255, 255, 0.8);
   background: linear-gradient(150deg, rgba(255, 255, 255, 0.62), rgba(255, 255, 255, 0.82));
   box-shadow:
-    0 20px 42px rgba(22, 32, 46, 0.12),
+    0 16px 34px rgba(22, 32, 46, 0.09),
     inset 0 1px 1px rgba(255, 255, 255, 0.98);
   backdrop-filter: blur(28px) saturate(170%);
   -webkit-backdrop-filter: blur(28px) saturate(170%);
@@ -163,13 +274,77 @@ button:disabled {
   -webkit-backdrop-filter: blur(24px) saturate(150%);
 }
 
+.organizer-back-button {
+  display: inline-flex;
+  width: 44px;
+  height: 44px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.78);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.66);
+  color: #0087ff;
+  box-shadow:
+    0 10px 24px rgba(22, 32, 46, 0.07),
+    inset 0 1px 1px rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(22px) saturate(170%);
+  -webkit-backdrop-filter: blur(22px) saturate(170%);
+  transition:
+    transform 160ms cubic-bezier(0.2, 0, 0.2, 1),
+    background-color 180ms ease,
+    border-color 180ms ease;
+}
+
+.organizer-back-button:active {
+  transform: scale(0.97);
+}
+
+.organizer-action-row,
+.organizer-card-actions {
+  display: grid;
+  gap: 10px;
+}
+
+.organizer-action-row {
+  grid-template-columns: 1fr;
+}
+
+.organizer-card-actions {
+  grid-template-columns: 1fr;
+}
+
+.organizer-action-button {
+  width: 100%;
+  min-width: 0;
+}
+
+.organizer-report-button {
+  width: 100%;
+  min-width: 0;
+}
+
+@media (min-width: 640px) {
+  .organizer-action-row {
+    grid-template-columns: repeat(2, minmax(178px, 1fr));
+  }
+
+  .organizer-card-actions {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .organizer-report-button {
+    width: auto;
+    min-width: 210px;
+  }
+}
+
 .fup-card,
 .fup-subpanel,
 .fup-empty {
   border: 1px solid rgba(255, 255, 255, 0.7);
   background: linear-gradient(150deg, rgba(255, 255, 255, 0.56), rgba(255, 255, 255, 0.76));
   box-shadow:
-    0 12px 30px rgba(23, 36, 51, 0.06),
+    0 10px 24px rgba(23, 36, 51, 0.045),
     inset 0 1px 0 rgba(255, 255, 255, 0.9);
   backdrop-filter: blur(22px) saturate(155%);
   -webkit-backdrop-filter: blur(22px) saturate(155%);
@@ -232,6 +407,68 @@ button:disabled {
 
 .fup-meeting-action {
   width: min(190px, 100%);
+  background: #0087ff;
+  box-shadow: none;
+}
+
+.fup-flat-action,
+.fup-muted-action {
+  display: flex;
+  width: 100%;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  padding: 0 20px;
+  text-align: center;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.15;
+}
+
+.fup-muted-action {
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  background: rgba(255, 255, 255, 0.62);
+  color: #7b848e;
+  backdrop-filter: blur(18px) saturate(160%);
+  -webkit-backdrop-filter: blur(18px) saturate(160%);
+}
+
+.fup-confirm-action {
+  display: flex;
+  width: 100%;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(52, 199, 89, 0.22);
+  border-radius: 999px;
+  background: rgba(236, 253, 243, 0.76);
+  color: #149648;
+  padding: 0 20px;
+  text-align: center;
+  font-size: 14px;
+  font-weight: 600;
+  backdrop-filter: blur(18px) saturate(160%);
+  -webkit-backdrop-filter: blur(18px) saturate(160%);
+}
+
+.fup-shelf-title {
+  font-family:
+    "Neutral Face",
+    -apple-system,
+    BlinkMacSystemFont,
+    "SF Pro Display",
+    "SF Pro Text",
+    system-ui,
+    sans-serif;
+  font-size: 17px;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+
+.fup-task-shelf .fup-shelf-title {
+  padding-left: 14px;
+  font-size: 18px;
 }
 
 .fup-progress-card,
@@ -297,6 +534,17 @@ button:disabled {
     inset 0 1px 1px rgba(255, 255, 255, 0.98);
 }
 
+.fup-add-button svg {
+  transition:
+    transform 260ms cubic-bezier(0.2, 0, 0.2, 1),
+    filter 220ms ease;
+}
+
+.fup-add-button.is-active svg {
+  transform: rotate(45deg) scale(0.98);
+  filter: drop-shadow(0 8px 14px rgba(0, 135, 255, 0.22));
+}
+
 .fup-nav-icon {
   display: block;
   width: 25px;
@@ -313,7 +561,8 @@ button:disabled {
 }
 
 .fup-action-grid button {
-  padding-inline: 10px;
+  min-width: 0;
+  padding-inline: 12px;
   font-size: 13px;
 }
 
@@ -340,6 +589,17 @@ button:disabled {
   from {
     opacity: 0;
     transform: translateY(14px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes sheetRise {
+  from {
+    opacity: 0;
+    transform: translateY(18px) scale(0.985);
   }
   to {
     opacity: 1;

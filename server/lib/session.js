@@ -17,6 +17,7 @@ export function readSessionCookie(req) {
       .split(";")
       .map((item) => item.trim())
       .filter(Boolean)
+      .filter((item) => item.includes("="))
       .map((item) => {
         const index = item.indexOf("=");
         return [item.slice(0, index), decodeURIComponent(item.slice(index + 1))];
@@ -28,11 +29,11 @@ export function readSessionCookie(req) {
 export function sessionCookie(token) {
   const webappUrl = process.env.WEBAPP_URL || "";
   const secure = webappUrl.startsWith("https://") ? "; Secure" : "";
-  return `${COOKIE_NAME}=${encodeURIComponent(token)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=2592000${secure}`;
+  return `${COOKIE_NAME}=${encodeURIComponent(token)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=2592000; Priority=High${secure}`;
 }
 
 export function clearSessionCookie() {
   const webappUrl = process.env.WEBAPP_URL || "";
   const secure = webappUrl.startsWith("https://") ? "; Secure" : "";
-  return `${COOKIE_NAME}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0${secure}`;
+  return `${COOKIE_NAME}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0; Priority=High${secure}`;
 }

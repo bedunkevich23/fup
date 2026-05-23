@@ -1,13 +1,15 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { Bell, Check, Clock3, Plus, Search, Send } from "lucide-react";
+import { Check, Clock3, Plus, Search } from "lucide-react";
 import { apiClient } from "../../lib/apiClient";
-import { hapticError, hapticImpact, hapticSelection, hapticSuccess, openTelegramLink, sendReminderMock } from "../../lib/telegram";
+import { hapticError, hapticSelection, hapticSuccess, openTelegramLink } from "../../lib/telegram";
+import chevronLeftIconUrl from "../../assets/fup/chevron-left.svg";
 import checklistIconUrl from "../../assets/fup/checklist.svg";
 import fupLogoUrl from "../../assets/fup/logo.svg";
 import personIconUrl from "../../assets/fup/person-2.svg";
 import squareGridIconUrl from "../../assets/fup/square-grid.svg";
 import starBackgroundUrl from "../../assets/fup/star-background.svg";
+import xmarkIconUrl from "../../assets/fup/xmark.svg";
 import { AppleSwitch } from "../ui/AppleSwitch";
 import { ConnectionBadge } from "../ui/Badge";
 import { Button } from "../ui/Button";
@@ -48,12 +50,12 @@ const roleToRu: Record<string, string> = {
   other: "Основатель",
 };
 const places = ["Demo Day", "Менторская встреча", "Нетворкинг", "Чат", "Другое"];
-const nextSteps = ["Написать", "Отправить материалы", "Назначить звонок", "Сделать intro", "Свой вариант"];
+const nextSteps = ["Написать", "Отправить материалы", "Назначить звонок", "Свой вариант"];
 const reminders = [
   { label: "завтра", days: 1 },
   { label: "через 2 дня", days: 2 },
   { label: "через неделю", days: 7 },
-  { label: "выбрать дату", days: 3 },
+  { label: "выбрать дату", days: 0 },
 ];
 const statusLabel: Record<string, string> = {
   scheduled: "Запланировано",
@@ -83,6 +85,17 @@ const remindAtFromDays = (days: number) => {
   date.setHours(10, 0, 0, 0);
   return date.toISOString();
 };
+const minReminderDate = () => {
+  const date = new Date();
+  date.setDate(date.getDate() + 1);
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${date.getFullYear()}-${month}-${day}`;
+};
+const reminderAtFromDate = (value: string) => {
+  const date = new Date(`${value}T10:00:00`);
+  return Number.isNaN(date.getTime()) ? "" : date.toISOString();
+};
 
 const fullName = (user: AnyRecord = {}) =>
   [user.first_name || user.telegram_first_name, user.last_name || user.telegram_last_name].filter(Boolean).join(" ") ||
@@ -94,9 +107,12 @@ const splitFullName = (name: string) => {
   return { first_name: parts[0] || "", last_name: parts.slice(1).join(" ") || "" };
 };
 const usernameOf = (user: AnyRecord = {}) => user.telegram_username || user.username || "";
-const contactName = (contact: AnyRecord = {}) => contact.contact_name || "Контакт";
+const contactName = (contact: AnyRecord = {}, user?: AnyRecord) => {
+  const freshUser = user || contact.target_user;
+  return freshUser?.id ? fullName(freshUser) : contact.contact_name || "Контакт";
+};
 const contactStep = (contact: AnyRecord = {}) => contact.next_step_text || contact.next_step || "Написать";
-const contactUsername = (contact: AnyRecord = {}) => contact.contact_username || "";
+const contactUsername = (contact: AnyRecord = {}) => contact.contact_username || usernameOf(contact.target_user || {});
 const contactPlace = (contact: AnyRecord = {}) => contact.where_met === "Каталог участников" ? "Участник события" : contact.where_met || "На мероприятии";
 const cleanContactContext = (contact: AnyRecord = {}) =>
   String(contact.context || "")
@@ -117,6 +133,13 @@ const metricCount = (value: unknown) => {
   const numeric = Number(value);
   return Number.isFinite(numeric) && numeric >= 0 ? numeric : undefined;
 };
+const assertJoinedEvent = (response: AnyRecord) => {
+  if (response.event) return response;
+  if (response.memberStatus === "invite_expired") {
+    throw new Error("Код мероприятия истек. Попросите организатора новый код.");
+  }
+  throw new Error("Мероприятие с таким кодом не найдено");
+};
 
 export function ParticipantApp() {
   const [view, setView] = useState<ParticipantView>("today");
@@ -127,6 +150,7 @@ export function ParticipantApp() {
   const [followUps, setFollowUps] = useState<AnyRecord[]>([]);
   const [members, setMembers] = useState<AnyRecord[]>([]);
   const [loading, setLoading] = useState(true);
+  const [hydratingEvent, setHydratingEvent] = useState(false);
   const [toast, setToast] = useState<ToastState>(null);
   const [selectedContact, setSelectedContact] = useState<AnyRecord | null>(null);
   const [pendingVersion, setPendingVersion] = useState(0);
@@ -149,22 +173,28 @@ export function ParticipantApp() {
       setContacts([]);
       setFollowUps([]);
       setMembers([]);
+      setHydratingEvent(false);
       setLoading(false);
       return;
     }
 
-    const [homeData, contactsData, followUpsData, membersData] = await Promise.all([
-      apiClient.getEventHome(activeEvent.id),
-      apiClient.getContacts(activeEvent.id),
-      apiClient.getFollowups(activeEvent.id),
-      apiClient.getEventMembers(activeEvent.id),
-    ]);
-    const groupedFollowUps = followUpsData as AnyRecord;
-    setHome(homeData as AnyRecord);
-    setContacts(((contactsData as AnyRecord).contacts || []) as AnyRecord[]);
-    setFollowUps([...(groupedFollowUps.today || []), ...(groupedFollowUps.upcoming || []), ...(groupedFollowUps.completed || [])]);
-    setMembers(((membersData as AnyRecord).members || []) as AnyRecord[]);
     setLoading(false);
+    setHydratingEvent(true);
+    try {
+      const [homeData, contactsData, followUpsData, membersData] = await Promise.all([
+        apiClient.getEventHome(activeEvent.id),
+        apiClient.getContacts(activeEvent.id),
+        apiClient.getFollowups(activeEvent.id),
+        apiClient.getEventMembers(activeEvent.id),
+      ]);
+      const groupedFollowUps = followUpsData as AnyRecord;
+      setHome(homeData as AnyRecord);
+      setContacts(((contactsData as AnyRecord).contacts || []) as AnyRecord[]);
+      setFollowUps([...(groupedFollowUps.today || []), ...(groupedFollowUps.upcoming || []), ...(groupedFollowUps.completed || [])]);
+      setMembers(((membersData as AnyRecord).members || []) as AnyRecord[]);
+    } finally {
+      setHydratingEvent(false);
+    }
   };
 
   const runAction = async <T,>(key: string, action: AsyncAction<T>, successMessage?: string) => {
@@ -207,13 +237,6 @@ export function ParticipantApp() {
           hapticSelection();
         }
       }}
-      onPointerDownCapture={(event) => {
-        const target = event.target;
-        if (!(target instanceof Element)) return;
-        const control = target.closest("button, a, [role='button'], [role='switch']");
-        if (!control || control.matches(":disabled") || control.getAttribute("aria-disabled") === "true") return;
-        hapticImpact(control.getAttribute("aria-label") === "Добавить контакт" ? "soft" : "light");
-      }}
     >
       <div className="relative flex h-full flex-col overflow-hidden">
         <HomeBackdrop />
@@ -221,9 +244,9 @@ export function ParticipantApp() {
           {loading ? <LoadingScreen /> : null}
           {!loading && !me?.profileCompleted ? <ProfileScreen me={me} actions={actions} pendingVersion={pendingVersion} required /> : null}
           {!loading && me?.profileCompleted && !event && view !== "profile" ? <JoinEventScreen actions={actions} onProfile={() => setView("profile")} /> : null}
-          {!loading && me?.profileCompleted && event && view === "today" ? <TodayScreen me={me} event={event} home={home} contacts={contacts} members={members} onContacts={() => setView("people")} onProfile={() => setView("profile")} onContact={(contact) => { setSelectedContact(contact); setView("contact"); }} /> : null}
-          {!loading && event && view === "people" ? <PeopleScreen event={event} members={members} me={me} actions={actions} /> : null}
-          {!loading && event && view === "save" ? <SaveScreen event={event} members={members} me={me} actions={actions} /> : null}
+          {!loading && me?.profileCompleted && event && view === "today" ? <TodayScreen me={me} event={event} home={home} contacts={contacts} members={members} hydrating={hydratingEvent} onContacts={() => setView("people")} onProfile={() => setView("profile")} onContact={(contact) => { setSelectedContact(contact); setView("contact"); }} /> : null}
+          {!loading && event && view === "people" ? <PeopleScreen event={event} members={members} contacts={contacts} me={me} actions={actions} /> : null}
+          {!loading && event && view === "save" ? <SaveScreen event={event} members={members} contacts={contacts} me={me} actions={actions} onDone={() => setView("today")} /> : null}
           {!loading && event && view === "followups" ? <FollowUpsScreen followUps={followUps} actions={actions} /> : null}
           {!loading && view === "profile" ? <ProfileScreen me={me} actions={actions} pendingVersion={pendingVersion} /> : null}
           {!loading && me?.profileCompleted && event && view === "contact" && selectedContact ? <ContactDetailScreen contact={selectedContact} members={members} followUps={followUps} actions={actions} onBack={() => setView("today")} /> : null}
@@ -334,8 +357,7 @@ function JoinEventScreen({ actions, onProfile }: { actions: AppActions; onProfil
       joinKey,
       async () => {
         const response = (await apiClient.joinEvent(code)) as AnyRecord;
-        if (!response.event) throw new Error("Мероприятие с таким кодом не найдено");
-        return response;
+        return assertJoinedEvent(response);
       },
       "Вы подключились к мероприятию",
     )) as AnyRecord | undefined;
@@ -369,7 +391,7 @@ function JoinEventScreen({ actions, onProfile }: { actions: AppActions; onProfil
             className="h-14 w-full rounded-[24px] border border-white/70 bg-white/62 px-4 text-[17px] font-semibold tracking-[0] outline-none ring-[#0071e3]/15 transition placeholder:font-medium placeholder:text-slate-400 focus:ring-4"
           />
         </label>
-        <Button className="mt-4 w-full py-4" onClick={join} disabled={actions.isPending(joinKey)}>
+        <Button className="mt-4 w-full" onClick={join} disabled={actions.isPending(joinKey)}>
           {actions.isPending(joinKey) ? "Подключаем..." : "Подключиться"}
         </Button>
       </Card>
@@ -385,7 +407,7 @@ function Shelf({ title, subtitle, children, className = "" }: { title: string; s
     <section className={`fup-panel rounded-[34px] p-4 ${className}`}>
       <div className="mb-4 flex items-end justify-between gap-3">
         <div>
-          <h3 className="text-[18px] font-semibold leading-tight text-black">{title}</h3>
+          <h3 className="fup-shelf-title text-[18px] font-semibold leading-tight text-black">{title}</h3>
           {subtitle ? <p className="mt-1 text-[13px] leading-5 text-slate-500">{subtitle}</p> : null}
         </div>
         <div className="h-px flex-1 bg-gradient-to-r from-slate-200/70 to-transparent" />
@@ -395,18 +417,68 @@ function Shelf({ title, subtitle, children, className = "" }: { title: string; s
   );
 }
 
-function ParticipantHeader({ kicker, title, description }: { kicker?: string; title?: string; description?: string }) {
+function useIntroCopy(introKey?: string) {
+  const storageKey = introKey ? `fup:intro:${introKey}` : "";
+  const [visible, setVisible] = useState(() => {
+    if (!introKey) return true;
+    try {
+      return window.sessionStorage.getItem(storageKey) !== "seen";
+    } catch {
+      return true;
+    }
+  });
+
+  useEffect(() => {
+    if (!introKey || !visible) return undefined;
+    const timer = window.setTimeout(() => {
+      setVisible(false);
+      try {
+        window.sessionStorage.setItem(storageKey, "seen");
+      } catch {
+        // Session storage is optional inside embedded browsers.
+      }
+    }, 6500);
+    return () => window.clearTimeout(timer);
+  }, [introKey, storageKey, visible]);
+
+  return visible;
+}
+
+function ParticipantHeader({ kicker, title, description, introKey }: { kicker?: string; title?: string; description?: string; introKey?: string }) {
+  const heading = title || kicker;
+  const showDescription = useIntroCopy(introKey);
   return (
     <header className="fup-screen-header px-2 pt-1">
-      {kicker ? <p className="text-[12px] font-semibold uppercase text-[#0072fc]">{kicker}</p> : null}
-      {title ? <h1 className="fup-display mt-2 text-[27px] leading-[1.1] text-black">{title}</h1> : null}
-      {description ? <p className={`${title ? "mt-3" : "mt-2"} text-[14px] leading-6 text-[#5f6873]`}>{description}</p> : null}
+      {title && kicker ? <p className="text-[12px] font-semibold uppercase text-[#0072fc]">{kicker}</p> : null}
+      {heading ? <h1 className={`fup-display text-[27px] leading-[1.08] text-black ${title && kicker ? "mt-2" : ""}`}>{heading}</h1> : null}
+      {description ? (
+        <p className={`fup-intro-copy ${showDescription ? "is-visible" : "is-hidden"} ${heading ? "mt-3" : "mt-2"} max-w-[31ch] text-[14px] leading-6 text-[#5f6873]`}>
+          {description}
+        </p>
+      ) : null}
     </header>
+  );
+}
+
+function IconCircleButton({ iconUrl, label, onClick, className = "" }: { iconUrl: string; label: string; onClick: () => void; className?: string }) {
+  return (
+    <button aria-label={label} className={`apple-icon-button button-press ${className}`} onClick={onClick}>
+      <span aria-hidden className="apple-icon-mask" style={{ WebkitMaskImage: `url(${iconUrl})`, maskImage: `url(${iconUrl})` }} />
+    </button>
   );
 }
 
 function EmptyGlassState({ children }: { children: ReactNode }) {
   return <p className="fup-empty rounded-[26px] px-4 py-5 text-[13px] leading-5 text-[#6b7480]">{children}</p>;
+}
+
+function CompactInfoBlock({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="fup-subpanel rounded-[20px] px-3 py-2">
+      <p className="text-[10px] font-semibold uppercase text-[#0087ff]">{label}</p>
+      <p className="mt-1 text-[13px] leading-5 text-slate-600">{value}</p>
+    </div>
+  );
 }
 
 function HomeBackdrop() {
@@ -427,6 +499,7 @@ function TodayScreen({
   home,
   contacts,
   members,
+  hydrating,
   onContacts,
   onProfile,
   onContact,
@@ -436,6 +509,7 @@ function TodayScreen({
   home: AnyRecord | null;
   contacts: AnyRecord[];
   members: AnyRecord[];
+  hydrating: boolean;
   onContacts: () => void;
   onProfile: () => void;
   onContact: (contact: AnyRecord) => void;
@@ -474,40 +548,81 @@ function TodayScreen({
         </h1>
       </header>
 
-      <section className="fup-progress-shell animate-[shelfIn_460ms_ease_both] rounded-[38px] p-4">
-        <div className="grid grid-cols-2 gap-3">
-          <HomeProgressCard label="Сохранено" value={`${savedContacts} / ${contactGoal}`}>
-            <div className="mt-auto flex min-h-12 items-end justify-end">
-              <div className="flex items-center pr-1">
-                {latestAvatars.map((contact, index) => (
-                  <RoundAvatar
-                    key={contact.id || `${contactName(contact)}-${index}`}
-                    user={contactUser(contact, members)}
-                    label={contactName(contact)}
-                    className={`size-11 border-2 border-white/70 ${index ? "-ml-3" : ""}`}
-                  />
-                ))}
-              </div>
+      {hydrating && !home ? (
+        <HomeDataSkeleton />
+      ) : (
+        <>
+          <section className="fup-progress-shell animate-[shelfIn_460ms_ease_both] rounded-[38px] p-4">
+            <div className="grid grid-cols-2 gap-3">
+              <HomeProgressCard label="Сохранено" value={`${savedContacts} / ${contactGoal}`}>
+                <div className="mt-auto flex min-h-12 items-end justify-end">
+                  <div className="flex items-center pr-1">
+                    {latestAvatars.map((contact, index) => (
+                      <RoundAvatar
+                        key={contact.id || `${contactName(contact)}-${index}`}
+                        user={contactUser(contact, members)}
+                        label={contactName(contact, contactUser(contact, members))}
+                        className={`size-11 border-2 border-white/70 ${index ? "-ml-3" : ""}`}
+                      />
+                    ))}
+                  </div>
+                </div>
+              </HomeProgressCard>
+              <HomeProgressCard label="Выполнено" value={`${completedGoals} / ${totalGoals}`} />
             </div>
-          </HomeProgressCard>
-          <HomeProgressCard label="Выполнено" value={`${completedGoals} / ${totalGoals}`} />
+          </section>
+
+          <section className="space-y-6 animate-[shelfIn_560ms_ease_both]">
+            <h2 className="fup-display px-2 text-[25px] leading-[1.1] text-black">Последние встречи</h2>
+            <div className="fup-meetings-shell rounded-[38px] p-3">
+              <div className="space-y-3">
+                {recentContacts.map((contact) => <RecentMeetingCard key={contact.id} contact={contact} user={contactUser(contact, members)} onOpen={() => onContact(contact)} />)}
+                {!recentContacts.length ? (
+                  <div className="fup-meeting-card rounded-[32px] px-5 py-8 text-center text-[14px] leading-6 text-[#6f7780]">
+                    Здесь появятся последние сохраненные встречи.
+                  </div>
+                ) : null}
+              </div>
+              <button className="button-press fup-muted-action mt-3" onClick={onContacts}>
+                Открыть еще
+              </button>
+            </div>
+          </section>
+        </>
+      )}
+    </div>
+  );
+}
+
+function HomeDataSkeleton() {
+  return (
+    <div className="space-y-4 animate-[shelfIn_420ms_ease_both]">
+      <section className="fup-progress-shell rounded-[38px] p-4">
+        <div className="grid grid-cols-2 gap-3">
+          {[0, 1].map((item) => (
+            <div key={item} className="fup-progress-card min-h-[136px] rounded-[29px] p-4">
+              <div className="h-5 w-20 animate-pulse rounded-full bg-white/70" />
+              <div className="mt-5 h-9 w-16 animate-pulse rounded-full bg-white/75" />
+              <div className="mt-6 h-8 w-24 animate-pulse rounded-full bg-white/60" />
+            </div>
+          ))}
         </div>
       </section>
-
-      <section className="space-y-3 animate-[shelfIn_560ms_ease_both]">
-        <h2 className="fup-display px-2 text-[27px] leading-[1.1] text-black">Последние встречи</h2>
+      <section className="space-y-3">
+        <div className="mx-2 h-7 w-48 animate-pulse rounded-full bg-white/70" />
         <div className="fup-meetings-shell rounded-[38px] p-3">
-          <div className="space-y-3">
-            {recentContacts.map((contact) => <RecentMeetingCard key={contact.id} contact={contact} user={contactUser(contact, members)} onOpen={() => onContact(contact)} />)}
-            {!recentContacts.length ? (
-              <div className="fup-meeting-card rounded-[32px] px-5 py-8 text-center text-[14px] leading-6 text-[#6f7780]">
-                Здесь появятся последние сохраненные встречи.
+          {[0, 1].map((item) => (
+            <div key={item} className="fup-meeting-card mb-3 rounded-[30px] p-4">
+              <div className="flex gap-3">
+                <div className="size-16 animate-pulse rounded-full bg-white/75" />
+                <div className="flex-1 pt-2">
+                  <div className="h-5 w-32 animate-pulse rounded-full bg-white/75" />
+                  <div className="mt-3 h-4 w-24 animate-pulse rounded-full bg-white/60" />
+                </div>
               </div>
-            ) : null}
-          </div>
-          <button className="button-press mt-3 w-full rounded-[26px] py-4 text-[16px] font-medium text-[#7b848e] transition hover:bg-white/38" onClick={onContacts}>
-            Открыть еще
-          </button>
+              <div className="mt-4 h-16 animate-pulse rounded-[22px] bg-white/55" />
+            </div>
+          ))}
         </div>
       </section>
     </div>
@@ -553,22 +668,23 @@ function RoundAvatar({ user, label, className = "size-12" }: { user?: AnyRecord;
 function RecentMeetingCard({ contact, user, onOpen }: { contact: AnyRecord; user?: AnyRecord; onOpen: () => void }) {
   const username = contactUsername(contact) || usernameOf(user || {});
   const context = cleanContactContext(contact);
+  const name = contactName(contact, user);
   return (
-    <button className="button-press fup-meeting-card block w-full rounded-[32px] p-5 text-left" onClick={onOpen}>
+    <button className="button-press fup-meeting-card block w-full rounded-[30px] p-4 text-left" onClick={onOpen}>
       <div className="flex items-start gap-3">
-        <RoundAvatar user={user} label={contactName(contact)} className="size-[72px]" />
+        <RoundAvatar user={user} label={name} className="size-16" />
         <div className="min-w-0 flex-1 pt-1">
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
-              <h3 className="truncate text-[24px] font-bold leading-none text-black">{contactName(contact)}</h3>
+              <h3 className="truncate text-[21px] font-bold leading-none text-black">{name}</h3>
               {username ? <p className="mt-2 truncate text-[16px] font-medium text-[#0087ff]">@{username.replace(/^@/, "")}</p> : null}
             </div>
             <time className="shrink-0 pt-0.5 text-[12px] font-medium text-[#838b94]">{formatMeetingDate(contact.created_at)}</time>
           </div>
         </div>
       </div>
-      <div className="mt-5 flex flex-wrap items-center justify-between gap-2">
-        <p className="text-[18px] font-bold leading-tight text-black">{contactPlace(contact)}</p>
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
+        <p className="text-[16px] font-bold leading-tight text-black">{contactPlace(contact)}</p>
       </div>
       {context ? <p className="fup-subpanel mt-3 line-clamp-3 rounded-[22px] px-3 py-2 text-[14px] leading-5 text-black">{context}</p> : null}
       <div className="fup-meeting-action mt-4 inline-flex h-11 max-w-full items-center justify-center rounded-full bg-[#0087ff] px-4 text-[13px] font-medium text-white shadow-[0_10px_24px_rgba(0,135,255,0.24)]">
@@ -578,20 +694,26 @@ function RecentMeetingCard({ contact, user, onOpen }: { contact: AnyRecord; user
   );
 }
 
-function PeopleScreen({ event, members, me, actions }: { event: AnyRecord | null; members: AnyRecord[]; me: AnyRecord | null; actions: AppActions }) {
+function PeopleScreen({ event, members, contacts, me, actions }: { event: AnyRecord | null; members: AnyRecord[]; contacts: AnyRecord[]; me: AnyRecord | null; actions: AppActions }) {
   const [query, setQuery] = useState("");
   const currentUserId = me?.user?.id;
-  const normalizedQuery = query.trim().toLowerCase();
-  const visibleMembers = members
-    .filter((member) => member.id !== currentUserId)
-    .filter((member) => {
-      if (!normalizedQuery) return true;
-      return [fullName(member), member.role, member.company, member.field, member.looking_for, member.can_help_with]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase()
-        .includes(normalizedQuery);
-    });
+  const deferredQuery = useDeferredValue(query);
+  const normalizedQuery = deferredQuery.trim().toLowerCase();
+  const visibleMembers = useMemo(
+    () =>
+      members
+        .filter((member) => member.id !== currentUserId)
+        .filter((member) => {
+          if (!normalizedQuery) return true;
+          return [fullName(member), member.role, member.company, member.field, member.looking_for, member.can_help_with]
+            .filter(Boolean)
+            .join(" ")
+            .toLowerCase()
+            .includes(normalizedQuery);
+        }),
+    [currentUserId, members, normalizedQuery],
+  );
+  const savedMemberIds = useMemo(() => new Set(contacts.map((contact) => contact.target_user_id).filter(Boolean)), [contacts]);
 
   if (!event) {
     return (
@@ -606,17 +728,18 @@ function PeopleScreen({ event, members, me, actions }: { event: AnyRecord | null
 
   if (me?.user?.is_visible === false) {
     return (
-      <div className="fup-screen space-y-3 py-1">
-        <ParticipantHeader kicker="Контакты" description="Каталог участников доступен, когда ваша анкета видна другим." />
+      <div className="fup-screen space-y-4 py-1">
+        <ParticipantHeader kicker="Контакты" introKey="people-hidden" description="Каталог участников доступен, когда ваша анкета видна другим." />
         <EmptyGlassState>Включите видимость в профиле, чтобы искать людей и сохранять контакты из каталога.</EmptyGlassState>
       </div>
     );
   }
 
   return (
-    <div className="fup-screen space-y-3 py-1">
+    <div className="fup-screen space-y-4 py-1">
       <ParticipantHeader
         kicker="Контакты"
+        introKey="people"
         description="Смотрите анкеты участников и сохраняйте тех, к кому важно вернуться после встречи."
       />
       <div className="fup-control flex h-14 items-center gap-2 rounded-[28px] px-4">
@@ -635,11 +758,12 @@ function PeopleScreen({ event, members, me, actions }: { event: AnyRecord | null
       <div className="space-y-3">
         {visibleMembers.map((member) => {
           const key = `people-save-${member.id}`;
+          const saved = savedMemberIds.has(member.id);
           return (
             <article key={member.id} className="fup-card rounded-[32px] p-4">
               <div className="flex items-start gap-3">
                 <RoundAvatar user={member} label={fullName(member)} className="size-14" />
-                <div className="min-w-0 flex-1">
+                <div className="min-w-0 flex-1 pt-0.5">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <p className="truncate text-[17px] font-semibold text-black">{fullName(member)}</p>
@@ -647,15 +771,19 @@ function PeopleScreen({ event, members, me, actions }: { event: AnyRecord | null
                     </div>
                     <ConnectionBadge type="internal" />
                   </div>
-                  <div className="mt-3 grid gap-2">
-                    <p className="fup-subpanel rounded-[20px] px-3 py-2 text-[13px] leading-5 text-slate-600">Ищет: {member.looking_for || "Не указано"}</p>
-                    <p className="fup-subpanel rounded-[20px] px-3 py-2 text-[13px] leading-5 text-slate-600">Может помочь: {member.can_help_with || "Не указано"}</p>
-                  </div>
-                  <Button
-                    className="mt-4 w-full"
-                    variant="secondary"
-                    disabled={actions.isPending(key)}
-                    onClick={async () => {
+                </div>
+              </div>
+              <div className="mt-4 grid gap-2">
+                <CompactInfoBlock label="Ищет" value={member.looking_for || "Не указано"} />
+                <CompactInfoBlock label="Может помочь" value={member.can_help_with || "Не указано"} />
+              </div>
+              {saved ? (
+                <span className="fup-confirm-action mt-4">Уже в контактах</span>
+              ) : (
+                <Button
+                  className="mt-4 w-full"
+                  disabled={actions.isPending(key)}
+                  onClick={async () => {
                       const result = (await actions.runAction(
                         key,
                         async () =>
@@ -675,12 +803,11 @@ function PeopleScreen({ event, members, me, actions }: { event: AnyRecord | null
                       if (!result) return;
                       hapticSuccess();
                       await actions.refresh();
-                    }}
-                  >
-                    {actions.isPending(key) ? "Сохраняем..." : "Сохранить знакомство"}
-                  </Button>
-                </div>
-              </div>
+                  }}
+                >
+                  {actions.isPending(key) ? "Сохраняем..." : "Сохранить"}
+                </Button>
+              )}
             </article>
           );
         })}
@@ -690,10 +817,9 @@ function PeopleScreen({ event, members, me, actions }: { event: AnyRecord | null
   );
 }
 
-function SaveScreen({ event, members, me, actions }: { event: AnyRecord | null; members: AnyRecord[]; me: AnyRecord | null; actions: AppActions }) {
+function SaveScreen({ event, members, contacts, me, actions, onDone }: { event: AnyRecord | null; members: AnyRecord[]; contacts: AnyRecord[]; me: AnyRecord | null; actions: AppActions; onDone: () => void }) {
   const programEnabled = me?.user?.is_visible !== false;
   const [mode, setMode] = useState<SaveMode>(programEnabled ? "program" : "manual");
-  const [saved, setSaved] = useState<{ contact: AnyRecord; followUp: AnyRecord } | null>(null);
 
   if (!event) {
     return (
@@ -707,27 +833,25 @@ function SaveScreen({ event, members, me, actions }: { event: AnyRecord | null; 
   }
 
   return (
-    <div className="fup-screen space-y-3 py-1">
+    <div className="fup-screen space-y-4 py-1">
       <ParticipantHeader
         kicker="Новый контакт"
+        introKey="save"
         description="Сохраните человека, контекст разговора и следующий шаг в одной карточке."
       />
 
       <SegmentedControl
         value={mode}
         onChange={setMode}
-        className="fup-control"
         options={programEnabled ? [{ value: "program", label: "Из участников" }, { value: "manual", label: "Вручную" }] : [{ value: "manual", label: "Вручную" }]}
       />
 
-      {mode === "manual" || !programEnabled ? <ManualSaveForm event={event} actions={actions} onSaved={setSaved} /> : <ProgramMemberPicker event={event} members={members} me={me} actions={actions} onSaved={setSaved} />}
-
-      {saved ? <ReminderModal followUp={saved.followUp} contact={saved.contact} actions={actions} onClose={() => setSaved(null)} /> : null}
+      {mode === "manual" || !programEnabled ? <ManualSaveForm event={event} actions={actions} /> : <ProgramMemberPicker event={event} members={members} contacts={contacts} me={me} actions={actions} onSaved={onDone} />}
     </div>
   );
 }
 
-function ManualSaveForm({ event, actions, onSaved }: { event: AnyRecord; actions: AppActions; onSaved: (value: { contact: AnyRecord; followUp: AnyRecord }) => void }) {
+function ManualSaveForm({ event, actions }: { event: AnyRecord; actions: AppActions }) {
   const [contactNameValue, setContactNameValue] = useState("");
   const [username, setUsername] = useState("");
   const [place, setPlace] = useState("Demo Day");
@@ -735,6 +859,7 @@ function ManualSaveForm({ event, actions, onSaved }: { event: AnyRecord; actions
   const [nextStep, setNextStep] = useState("Написать");
   const [customNextStep, setCustomNextStep] = useState("");
   const [reminder, setReminder] = useState("завтра");
+  const [reminderDate, setReminderDate] = useState(minReminderDate());
   const [success, setSuccess] = useState(false);
 
   const submit = async () => {
@@ -743,6 +868,13 @@ function ManualSaveForm({ event, actions, onSaved }: { event: AnyRecord; actions
       return;
     }
     const step = nextStep === "Свой вариант" ? customNextStep || "Вернуться позже" : nextStep;
+    const remindAt = reminder === "выбрать дату"
+      ? reminderAtFromDate(reminderDate)
+      : remindAtFromDays(reminders.find((item) => item.label === reminder)?.days ?? 1);
+    if (!remindAt) {
+      actions.notify("Выберите дату напоминания", "error");
+      return;
+    }
     const result = (await actions.runAction(
       "save-contact-manual",
       async () =>
@@ -754,7 +886,7 @@ function ManualSaveForm({ event, actions, onSaved }: { event: AnyRecord; actions
           context: `${place}. ${context}`.trim(),
           nextStepType: step,
           nextStepText: step,
-          remindAt: remindAtFromDays(reminders.find((item) => item.label === reminder)?.days ?? 1),
+          remindAt,
         }),
       "Знакомство сохранено",
     )) as AnyRecord | undefined;
@@ -763,7 +895,6 @@ function ManualSaveForm({ event, actions, onSaved }: { event: AnyRecord; actions
     hapticSuccess();
     await actions.refresh();
     setSuccess(true);
-    onSaved({ contact: result.contact, followUp: { ...result.followup, contact: result.contact } });
     setContactNameValue("");
     setUsername("");
     setContext("");
@@ -777,7 +908,7 @@ function ManualSaveForm({ event, actions, onSaved }: { event: AnyRecord; actions
         </div>
         <h2 className="mt-4 text-2xl font-semibold">Знакомство разложено по полочкам</h2>
         <p className="mt-2 text-[14px] leading-6 text-slate-600">Готово — напомним вовремя.</p>
-        <Button className="mt-5 w-full" variant="secondary" onClick={() => setSuccess(false)}>
+        <Button className="mt-5 w-full" onClick={() => setSuccess(false)}>
           Сохранить еще одно
         </Button>
       </div>
@@ -803,40 +934,50 @@ function ManualSaveForm({ event, actions, onSaved }: { event: AnyRecord; actions
           <Field label="Следующий шаг"><SelectInput value={nextStep} onChange={(event) => setNextStep(event.target.value)}>{nextSteps.map((item) => <option key={item}>{item}</option>)}</SelectInput></Field>
           {nextStep === "Свой вариант" ? <Field label="Свой вариант"><TextInput value={customNextStep} onChange={(event) => setCustomNextStep(event.target.value)} /></Field> : null}
           <Field label="Напомнить"><SelectInput value={reminder} onChange={(event) => setReminder(event.target.value)}>{reminders.map((item) => <option key={item.label}>{item.label}</option>)}</SelectInput></Field>
+          {reminder === "выбрать дату" ? (
+            <Field label="Дата напоминания">
+              <TextInput type="date" min={minReminderDate()} value={reminderDate} onChange={(event) => setReminderDate(event.target.value)} />
+            </Field>
+          ) : null}
         </div>
       </Shelf>
-      <Button className="w-full py-4" onClick={submit} disabled={actions.isPending("save-contact-manual")}>
+      <Button className="w-full" onClick={submit} disabled={actions.isPending("save-contact-manual")}>
         {actions.isPending("save-contact-manual") ? "Сохраняем..." : "Сохранить и напомнить"}
       </Button>
     </div>
   );
 }
 
-function ProgramMemberPicker({ event, members, me, actions, onSaved }: { event: AnyRecord; members: AnyRecord[]; me: AnyRecord | null; actions: AppActions; onSaved: (value: { contact: AnyRecord; followUp: AnyRecord }) => void }) {
+function ProgramMemberPicker({ event, members, contacts, me, actions, onSaved }: { event: AnyRecord; members: AnyRecord[]; contacts: AnyRecord[]; me: AnyRecord | null; actions: AppActions; onSaved: () => void }) {
   const currentUserId = me?.user?.id;
-  const visibleMembers = members.filter((member) => member.id !== currentUserId);
+  const visibleMembers = useMemo(() => members.filter((member) => member.id !== currentUserId), [currentUserId, members]);
+  const savedMemberIds = useMemo(() => new Set(contacts.map((contact) => contact.target_user_id).filter(Boolean)), [contacts]);
 
   return (
     <Shelf title="Выбрать из участников" subtitle="Сохраняйте людей из каталога мероприятия в один шаг">
       <div className="space-y-3">
         {visibleMembers.slice(0, 4).map((member) => {
           const key = `save-member-${member.id}`;
+          const saved = savedMemberIds.has(member.id);
           return (
             <div key={member.id} className="fup-card rounded-[28px] p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex min-w-0 items-start gap-3">
-                  <RoundAvatar user={member} label={fullName(member)} className="size-12" />
-                  <div className="min-w-0">
-                    <p className="truncate font-semibold">{fullName(member)}</p>
-                    <p className="mt-1 text-[13px] text-slate-500">{roleToRu[member.role] || member.role || "Участник"} · {member.company || member.field || "FUP"}</p>
+              <div className="flex items-start gap-3">
+                <RoundAvatar user={member} label={fullName(member)} className="size-12" />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate font-semibold">{fullName(member)}</p>
+                      <p className="mt-1 text-[13px] text-slate-500">{roleToRu[member.role] || member.role || "Участник"} · {member.company || member.field || "FUP"}</p>
+                    </div>
+                    <ConnectionBadge type="internal" />
                   </div>
                 </div>
-                <ConnectionBadge type="internal" />
               </div>
-              <p className="mt-3 text-[13px] leading-5 text-slate-600">{member.can_help_with || "Профиль пока не заполнен."}</p>
-              <Button
+              <div className="mt-3">
+                <CompactInfoBlock label="Может помочь" value={member.can_help_with || "Профиль пока не заполнен."} />
+              </div>
+              {saved ? <span className="fup-confirm-action mt-4">Уже в контактах</span> : <Button
                 className="mt-4 w-full"
-                variant="secondary"
                 disabled={actions.isPending(key)}
                 onClick={async () => {
                   const result = (await actions.runAction(
@@ -858,11 +999,11 @@ function ProgramMemberPicker({ event, members, me, actions, onSaved }: { event: 
                   if (!result) return;
                   hapticSuccess();
                   await actions.refresh();
-                  onSaved({ contact: result.contact, followUp: { ...result.followup, contact: result.contact } });
+                  onSaved();
                 }}
               >
-                {actions.isPending(key) ? "Сохраняем..." : "Положить на полку"}
-              </Button>
+                {actions.isPending(key) ? "Сохраняем..." : "Сохранить"}
+              </Button>}
             </div>
           );
         })}
@@ -872,119 +1013,172 @@ function ProgramMemberPicker({ event, members, me, actions, onSaved }: { event: 
   );
 }
 
-function ReminderModal({ followUp, contact, actions, onClose }: { followUp: AnyRecord; contact: AnyRecord; actions: AppActions; onClose: () => void }) {
-  const complete = async (action: "message_sent" | "meeting_booked" | "person_introduced", message: string) => {
-    await actions.runAction(`followup-${followUp.id}-${action}`, async () => apiClient.updateFollowupAction(followUp.id, { action }), message);
-    hapticImpact();
-    await actions.refresh();
-    onClose();
-  };
-
-  return (
-    <div className="fixed inset-0 z-30 flex items-end justify-center bg-slate-900/18 p-4 pb-[max(16px,var(--tg-content-safe-area-inset-bottom,0px))] backdrop-blur-sm">
-      <div className="fup-panel w-full max-w-[398px] animate-[shelfIn_420ms_ease_both] rounded-[36px] p-5">
-        <div className="mb-4 flex items-start justify-between gap-3">
-          <div>
-            <p className="text-[13px] font-semibold text-[#0066cc]">Напоминание в Telegram</p>
-            <h3 className="mt-1 text-2xl font-semibold">Как будет выглядеть напоминание</h3>
-          </div>
-          <button aria-label="Закрыть" className="fup-control button-press flex size-10 shrink-0 items-center justify-center rounded-full text-[20px] text-slate-500" onClick={onClose}>x</button>
-        </div>
-        <div className="fup-subpanel rounded-[24px] p-4 text-[14px] leading-6 text-slate-700">{sendReminderMock(contact as any, { ...followUp, remind_at: followUpDate(followUp) } as any)}</div>
-        <Button className="mt-4 w-full" variant="secondary" onClick={() => actions.notify("Напоминание создано")}>
-          <Bell size={17} /> Готово
-        </Button>
-        <div className="mt-3 grid grid-cols-2 gap-2">
-          <Button variant="soft" onClick={() => complete("message_sent", "Follow-up отмечен")}>Я написал</Button>
-          <Button variant="soft" onClick={() => complete("meeting_booked", "Встреча сохранена")}>Назначил встречу</Button>
-          <Button variant="soft" onClick={() => complete("person_introduced", "Intro сохранено")}>Сделал intro</Button>
-          <Button
-            variant="ghost"
-            onClick={async () => {
-              await actions.runAction(`followup-${followUp.id}-snooze`, async () => apiClient.updateFollowupAction(followUp.id, { action: "snoozed", snoozeUntil: remindAtFromDays(2) }), "Follow-up отложен");
-              await actions.refresh();
-              onClose();
-            }}
-          >
-            Отложить
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function FollowUpsScreen({ followUps, actions }: { followUps: AnyRecord[]; actions: AppActions }) {
-  const [preview, setPreview] = useState<AnyRecord | null>(null);
+  const [nextAction, setNextAction] = useState<{ followUp: AnyRecord; action: "message_sent" | "meeting_booked"; message: string } | null>(null);
   const today = new Date().toDateString();
   const groups = [
-    { title: "Сегодня", items: followUps.filter((item) => new Date(followUpDate(item)).toDateString() === today && !["completed", "result"].includes(item.status)) },
-    { title: "Скоро", items: followUps.filter((item) => new Date(followUpDate(item)).toDateString() !== today && !["completed", "result"].includes(item.status)) },
-    { title: "Выполнено", items: followUps.filter((item) => item.status === "completed" || item.status === "result") },
+    {
+      title: "Сегодня",
+      empty: "На сегодня чисто. Новые действия появятся здесь, когда подойдет время.",
+      items: followUps.filter((item) => new Date(followUpDate(item)).toDateString() === today && !["completed", "result"].includes(item.status)),
+    },
+    {
+      title: "Скоро",
+      empty: "Пока пусто. FUP положит сюда задачи, которые запланированы на следующие дни.",
+      items: followUps.filter((item) => new Date(followUpDate(item)).toDateString() !== today && !["completed", "result"].includes(item.status)),
+    },
+    {
+      title: "Выполнено",
+      empty: "Готовых действий пока нет. Как только отметите шаг, он появится здесь.",
+      items: followUps.filter((item) => item.status === "completed" || item.status === "result"),
+    },
   ];
 
   return (
-    <div className="fup-screen space-y-3 py-1">
+    <div className="fup-screen space-y-4 py-1">
       <ParticipantHeader
         kicker="Задачи"
+        introKey="followups"
         description="Здесь лежат напоминания и действия по встречам, которые еще нужно довести до результата."
       />
       {groups.map((group) => (
-        <Shelf key={group.title} title={group.title}>
+        <Shelf key={group.title} title={group.title} className="fup-task-shelf">
           <div className="space-y-3">
-            {group.items.length ? group.items.map((item) => <FollowUpCard key={item.id} followUp={item} actions={actions} onPreview={() => setPreview(item)} />) : <EmptyGlassState>Эта полка пока пустая.</EmptyGlassState>}
+            {group.items.length ? group.items.map((item) => <FollowUpCard key={item.id} followUp={item} actions={actions} onNextAction={(action, message) => setNextAction({ followUp: item, action, message })} />) : <EmptyGlassState>{group.empty}</EmptyGlassState>}
           </div>
         </Shelf>
       ))}
-      {preview ? <ReminderModal followUp={preview} contact={followUpContact(preview)} actions={actions} onClose={() => setPreview(null)} /> : null}
+      {nextAction ? <NextReminderModal {...nextAction} actions={actions} onClose={() => setNextAction(null)} /> : null}
     </div>
   );
 }
 
-function FollowUpCard({ followUp, actions, onPreview }: { followUp: AnyRecord; actions: AppActions; onPreview: () => void }) {
+function followUpCardDate(followUp: AnyRecord) {
+  return ["completed", "result"].includes(followUp.status)
+    ? followUp.result_at || followUp.completed_at || followUp.updated_at || followUpDate(followUp)
+    : followUpDate(followUp);
+}
+
+function FollowUpCard({
+  followUp,
+  actions,
+  onNextAction,
+}: {
+  followUp: AnyRecord;
+  actions: AppActions;
+  onNextAction: (action: "message_sent" | "meeting_booked", message: string) => void;
+}) {
   const contact = followUpContact(followUp);
   if (!contact?.id) return null;
-
-  const mark = async (action: "message_sent" | "meeting_booked" | "person_introduced", message: string) => {
-    await actions.runAction(`followup-${followUp.id}-${action}`, async () => apiClient.updateFollowupAction(followUp.id, { action }), message);
-    hapticImpact();
-    await actions.refresh();
-  };
+  const active = !["completed", "result"].includes(followUp.status);
 
   return (
-    <div className="fup-card rounded-[30px] p-4">
+    <div className="fup-card rounded-[28px] p-3.5">
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-[17px] font-semibold text-black">{contactName(contact)}</p>
-          <p className="mt-1 text-[13px] text-slate-500">{formatDate(followUpDate(followUp))}</p>
+          <p className="mt-1 text-[13px] text-slate-500">
+            {["completed", "result"].includes(followUp.status) ? "Последнее действие: " : "Сделать до: "}
+            {formatDate(followUpCardDate(followUp))}
+          </p>
         </div>
         <span className="fup-subpanel rounded-full px-3 py-1 text-[11px] font-semibold text-slate-500">{statusLabel[followUp.status] || followUp.status}</span>
       </div>
       {cleanContactContext(contact) ? <p className="mt-3 text-[13px] leading-5 text-slate-600">{cleanContactContext(contact)}</p> : null}
       <p className="mt-3 text-[13px] font-semibold text-[#1d1d1f]">Следующий шаг: {contactStep(contact)}</p>
-      <div className="fup-action-grid mt-4 grid grid-cols-2 gap-2">
-        {contactUsername(contact) ? (
+      {active ? (
+        <div className="fup-action-grid mt-4 grid grid-cols-2 gap-2">
+          {contactUsername(contact) ? (
+            <Button
+              className="col-span-2"
+              variant="primary"
+              disabled={actions.isPending(`followup-${followUp.id}-telegram-opened`)}
+              onClick={async () => {
+                await actions.runAction(
+                  `followup-${followUp.id}-telegram-opened`,
+                  async () => apiClient.updateFollowupAction(followUp.id, { action: "telegram_opened" }),
+                );
+                openTelegramLink(contactUsername(contact));
+                actions.notify("Telegram открыт. Это намерение, не выполненный follow-up.");
+              }}
+            >
+              Открыть Telegram
+            </Button>
+          ) : null}
+          <Button variant="soft" onClick={() => onNextAction("message_sent", "Сообщение отмечено")}>Я написал</Button>
+          <Button variant="soft" onClick={() => onNextAction("meeting_booked", "Встреча отмечена")}>Назначил встречу</Button>
           <Button
-            variant="secondary"
-            disabled={actions.isPending(`followup-${followUp.id}-telegram-opened`)}
+            className="col-span-2"
+            variant="ghost"
+            disabled={actions.isPending(`followup-${followUp.id}-delete`)}
             onClick={async () => {
-              await actions.runAction(
-                `followup-${followUp.id}-telegram-opened`,
-                async () => apiClient.updateFollowupAction(followUp.id, { action: "telegram_opened" }),
+              const result = await actions.runAction(
+                `followup-${followUp.id}-delete`,
+                async () => apiClient.deleteFollowup(followUp.id),
+                "Задача удалена",
               );
-              openTelegramLink(contactUsername(contact));
-              actions.notify("Telegram открыт. Это намерение, не выполненный follow-up.");
+              if (!result) return;
+              await actions.refresh();
             }}
           >
-            <Send size={15} /> Telegram
+            Удалить задачу
           </Button>
-        ) : (
-          <Button variant="secondary" onClick={onPreview}><Bell size={15} /> Напоминание</Button>
-        )}
-        <Button variant="soft" onClick={() => mark("message_sent", "Follow-up отмечен")}>Я написал</Button>
-        <Button variant="soft" onClick={() => mark("meeting_booked", "Встреча сохранена")}>Назначил встречу</Button>
-        <Button variant="soft" onClick={() => mark("person_introduced", "Intro сохранено")}>Сделал intro</Button>
-        <SnoozeDateButton followUp={followUp} actions={actions} className="col-span-2" />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function NextReminderModal({
+  followUp,
+  action,
+  message,
+  actions,
+  onClose,
+}: {
+  followUp: AnyRecord;
+  action: "message_sent" | "meeting_booked";
+  message: string;
+  actions: AppActions;
+  onClose: () => void;
+}) {
+  const [date, setDate] = useState(minReminderDate());
+  const key = `followup-${followUp.id}-${action}-next`;
+
+  const complete = async (nextReminderAt?: string) => {
+    const result = await actions.runAction(
+      key,
+      async () => apiClient.updateFollowupAction(followUp.id, { action, nextReminderAt }),
+      nextReminderAt ? `${message}. Следующая задача поставлена` : message,
+    );
+    if (!result) return;
+    hapticSuccess();
+    await actions.refresh();
+    onClose();
+  };
+
+  return (
+    <div className="fup-reminder-backdrop fixed inset-0 z-30 flex items-end justify-center p-4 pb-[max(16px,var(--tg-content-safe-area-inset-bottom,0px))]">
+      <div className="fup-reminder-sheet w-full max-w-[398px]">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-[13px] font-semibold text-[#0066cc]">Следующий шаг</p>
+            <h3 className="mt-1 text-[23px] font-semibold leading-tight text-black">Когда вернуться к контакту?</h3>
+          </div>
+          <IconCircleButton iconUrl={xmarkIconUrl} label="Закрыть" onClick={onClose} />
+        </div>
+        <p className="mt-3 text-[14px] leading-6 text-slate-600">Текущее действие уйдет в выполненные, а FUP создаст новую задачу на выбранную дату.</p>
+        <Field label="Дата следующего напоминания">
+          <TextInput type="date" min={minReminderDate()} value={date} onChange={(event) => setDate(event.target.value)} />
+        </Field>
+        <div className="mt-4 grid gap-2">
+          <Button disabled={actions.isPending(key)} onClick={() => void complete(reminderAtFromDate(date))}>
+            Поставить напоминание
+          </Button>
+          <Button disabled={actions.isPending(key)} variant="ghost" onClick={() => void complete()}>
+            Отметить без новой даты
+          </Button>
+        </div>
       </div>
     </div>
   );
@@ -1006,7 +1200,9 @@ function ContactDetailScreen({
   const user = contactUser(contact, members);
   const username = contactUsername(contact) || usernameOf(user || {});
   const followUp = followUps.find((item) => followUpContact(item)?.id === contact.id);
+  const activeFollowUp = followUp && !["completed", "result"].includes(followUp.status) ? followUp : null;
   const context = cleanContactContext(contact);
+  const [nextAction, setNextAction] = useState<{ action: "message_sent" | "meeting_booked"; message: string } | null>(null);
   const openChat = async () => {
     if (!username) {
       actions.notify("У контакта нет Telegram username", "error");
@@ -1021,15 +1217,13 @@ function ContactDetailScreen({
 
   return (
     <div className="fup-screen space-y-4 py-1">
-      <button className="button-press fup-control h-11 rounded-full px-4 text-[13px] font-semibold text-[#0066cc]" onClick={onBack}>
-        Назад
-      </button>
+      <IconCircleButton iconUrl={chevronLeftIconUrl} label="Назад" className="apple-icon-button--back" onClick={onBack} />
       <section className="fup-panel rounded-[36px] p-5">
         <div className="flex items-start gap-4">
-          <RoundAvatar user={user} label={contactName(contact)} className="size-[76px]" />
+          <RoundAvatar user={user} label={contactName(contact, user)} className="size-[76px]" />
           <div className="min-w-0 flex-1">
             <p className="text-[12px] font-semibold uppercase text-[#0072fc]">{contactPlace(contact)}</p>
-            <h1 className="mt-2 text-[28px] font-semibold leading-none text-black">{contactName(contact)}</h1>
+            <h1 className="mt-2 text-[28px] font-semibold leading-none text-black">{contactName(contact, user)}</h1>
             {username ? <p className="mt-2 truncate text-[15px] font-semibold text-[#0087ff]">@{username.replace(/^@/, "")}</p> : null}
           </div>
         </div>
@@ -1041,12 +1235,30 @@ function ContactDetailScreen({
           <InfoBlock label="Следующий шаг" value={contactStep(contact)} />
         </div>
         <div className="mt-5 grid gap-2 sm:grid-cols-2">
-          <Button onClick={() => void openChat()} disabled={!username}><Send size={16} /> Написать в Telegram</Button>
-          {followUp ? <Button variant="soft" onClick={() => void actions.runAction(`detail-${followUp.id}-sent`, async () => { const result = await apiClient.updateFollowupAction(followUp.id, { action: "message_sent" }); await actions.refresh(); return result; }, "Отметили сообщение")}>Я написал</Button> : null}
-          {followUp ? <Button variant="soft" onClick={() => void actions.runAction(`detail-${followUp.id}-meeting`, async () => { const result = await apiClient.updateFollowupAction(followUp.id, { action: "meeting_booked" }); await actions.refresh(); return result; }, "Встреча отмечена")}>Назначил встречу</Button> : null}
-          {followUp ? <SnoozeDateButton followUp={followUp} actions={actions} /> : null}
+          <Button onClick={() => void openChat()} disabled={!username}>Открыть Telegram</Button>
+          {activeFollowUp ? <Button variant="soft" onClick={() => setNextAction({ action: "message_sent", message: "Отметили сообщение" })}>Я написал</Button> : null}
+          {activeFollowUp ? <Button variant="soft" onClick={() => setNextAction({ action: "meeting_booked", message: "Встреча отмечена" })}>Назначил встречу</Button> : null}
+          {activeFollowUp ? <SnoozeDateButton followUp={activeFollowUp} actions={actions} /> : null}
+          <Button
+            className="sm:col-span-2"
+            variant="ghost"
+            disabled={actions.isPending(`contact-${contact.id}-delete`)}
+            onClick={async () => {
+              const result = await actions.runAction(
+                `contact-${contact.id}-delete`,
+                async () => apiClient.deleteContact(contact.id),
+                "Контакт удален",
+              );
+              if (!result) return;
+              await actions.refresh();
+              onBack();
+            }}
+          >
+            Удалить контакт
+          </Button>
         </div>
       </section>
+      {activeFollowUp && nextAction ? <NextReminderModal followUp={activeFollowUp} {...nextAction} actions={actions} onClose={() => setNextAction(null)} /> : null}
     </div>
   );
 }
@@ -1075,7 +1287,7 @@ function SnoozeDateButton({ followUp, actions, className = "" }: { followUp: Any
 
   return (
     <label className={`button-press relative ${className}`}>
-      <span className="pointer-events-none liquid-control flex h-12 items-center justify-center gap-2 rounded-[24px] px-4 text-[13px] font-semibold text-[#0066cc]">
+      <span className="fup-muted-action pointer-events-none gap-2 text-[#0087ff]">
         <Clock3 size={15} /> Отложить до даты
       </span>
       <input
@@ -1092,26 +1304,39 @@ function SnoozeDateButton({ followUp, actions, className = "" }: { followUp: Any
 function ProfileScreen({ me, actions, pendingVersion, required = false }: { me: AnyRecord | null; actions: AppActions; pendingVersion: number; required?: boolean }) {
   const user = me?.user || {};
   const [name, setName] = useState(fullName(user));
-  const [role, setRole] = useState(roleToRu[user.role] || "Основатель");
+  const [role, setRole] = useState(roleToRu[user.role] || user.role || "Основатель");
   const [lookingFor, setLookingFor] = useState(user.looking_for || "");
   const [canHelpWith, setCanHelpWith] = useState(user.can_help_with || "");
-  const [company, setCompany] = useState(user.company || "");
+  const [company, setCompany] = useState(user.company || user.education || user.field || "");
   const [isVisible, setIsVisible] = useState(Boolean(user.is_visible));
+  const [eventCode, setEventCode] = useState("");
 
   useEffect(() => {
     setName(fullName(user));
-    setRole(roleToRu[user.role] || "Основатель");
+    setRole(roleToRu[user.role] || user.role || "Основатель");
     setLookingFor(user.looking_for || "");
     setCanHelpWith(user.can_help_with || "");
-    setCompany(user.company || "");
+    setCompany(user.company || user.education || user.field || "");
     setIsVisible(Boolean(user.is_visible));
-  }, [user.id, pendingVersion]);
+  }, [
+    user.id,
+    user.first_name,
+    user.last_name,
+    user.telegram_first_name,
+    user.telegram_last_name,
+    user.role,
+    user.looking_for,
+    user.can_help_with,
+    user.company,
+    user.education,
+    user.field,
+    user.is_visible,
+  ]);
 
   const submit = async () => {
     const nameParts = splitFullName(name);
     if (
       !nameParts.first_name ||
-      !nameParts.last_name ||
       !role.trim() ||
       !company.trim() ||
       !lookingFor.trim() ||
@@ -1124,6 +1349,7 @@ function ProfileScreen({ me, actions, pendingVersion, required = false }: { me: 
       "save-profile",
       async () => apiClient.updateProfile({
         ...nameParts,
+        last_name: nameParts.last_name || user.last_name || user.telegram_last_name || "",
         role: roleToDb[role] || "other",
         looking_for: lookingFor.trim(),
         can_help_with: canHelpWith.trim(),
@@ -1137,11 +1363,28 @@ function ProfileScreen({ me, actions, pendingVersion, required = false }: { me: 
     await actions.refresh();
   };
 
+  const switchEvent = async () => {
+    const code = eventCode.trim();
+    if (!code) {
+      actions.notify("Введите новый код мероприятия", "error");
+      return;
+    }
+    const joined = await actions.runAction(
+      "profile-switch-event",
+      async () => assertJoinedEvent((await apiClient.joinEvent(code)) as AnyRecord),
+      "Мероприятие переключено",
+    );
+    if (!joined) return;
+    hapticSuccess();
+    setEventCode("");
+    await actions.refresh();
+  };
+
   return (
     <div className="fup-screen space-y-4 py-2">
       <ParticipantHeader
-        kicker={required ? "Перед стартом" : "Профиль"}
-        title={required ? "Заполните анкету" : "Ваша карточка"}
+        title={required ? "Заполните анкету" : "Профиль"}
+        introKey={required ? "profile-required" : "profile"}
         description={required ? "Сначала расскажите о себе и решите, показывать ли вас другим участникам." : "Заполните профиль, чтобы другие участники могли найти вас в каталоге события."}
       />
       <div className="fup-panel flex items-center gap-4 rounded-[34px] p-4">
@@ -1168,9 +1411,28 @@ function ProfileScreen({ me, actions, pendingVersion, required = false }: { me: 
           </label>
         </div>
       </Shelf>
-      <Button className="w-full py-4" onClick={submit} disabled={actions.isPending("save-profile")}>
+      <Button className="w-full" onClick={submit} disabled={actions.isPending("save-profile")}>
         {actions.isPending("save-profile") ? "Сохраняем..." : "Сохранить профиль"}
       </Button>
+      {!required ? (
+        <Shelf title="Другое мероприятие" subtitle="Новый код переключит приложение на последнее подключенное событие.">
+          <div className="grid gap-2">
+            <TextInput
+              autoCapitalize="none"
+              autoComplete="one-time-code"
+              placeholder="Введите код"
+              value={eventCode}
+              onChange={(event) => setEventCode(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") void switchEvent();
+              }}
+            />
+            <Button disabled={actions.isPending("profile-switch-event")} onClick={() => void switchEvent()}>
+              {actions.isPending("profile-switch-event") ? "Подключаем..." : "Подключиться по новому коду"}
+            </Button>
+          </div>
+        </Shelf>
+      ) : null}
     </div>
   );
 }
