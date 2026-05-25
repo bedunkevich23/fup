@@ -39,11 +39,22 @@ type TelegramHapticFeedback = {
   notificationOccurred?: (type: HapticNotificationType) => void;
   selectionChanged?: () => void;
 };
+type TelegramBackButton = {
+  show?: () => void;
+  hide?: () => void;
+  onClick?: (callback: () => void) => void;
+  offClick?: (callback: () => void) => void;
+};
 
 const telegramHaptics = () =>
   (window as Window & {
     Telegram?: { WebApp?: { HapticFeedback?: TelegramHapticFeedback } };
   }).Telegram?.WebApp?.HapticFeedback;
+
+export const getTelegramBackButton = () =>
+  (window as Window & {
+    Telegram?: { WebApp?: { BackButton?: TelegramBackButton } };
+  }).Telegram?.WebApp?.BackButton;
 
 const fireHaptic = (callback: ((feedback: TelegramHapticFeedback) => void) | undefined, fallbackMs: number) => {
   const feedback = telegramHaptics();

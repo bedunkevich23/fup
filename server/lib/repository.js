@@ -964,7 +964,7 @@ export async function archiveContact({ contactId, userId }) {
         .eq("status", "pending")
         .in("followup_id", followupIds);
     }
-    await createAnalyticsEvent({ event_id: contact.event_id, user_id: userId, action: "contact_archived", entity_id: contactId });
+    await createNonCriticalAnalyticsEvent({ event_id: contact.event_id, user_id: userId, action: "contact_archived", entity_id: contactId });
     return contact;
   }
   const contact = dev.contacts.find((item) => item.id === contactId && item.owner_user_id === userId);
@@ -1014,7 +1014,7 @@ export async function getFollowups({ eventId, userId }) {
   return {
     today: rows.filter((item) => new Date(dueAtOf(item)).toDateString() === today && !["completed", "result", "cancelled"].includes(item.status)),
     upcoming: rows.filter((item) => new Date(dueAtOf(item)).toDateString() !== today && !["completed", "result", "cancelled"].includes(item.status)),
-    completed: rows.filter((item) => ["completed", "result", "cancelled"].includes(item.status)),
+    completed: rows.filter((item) => ["completed", "result"].includes(item.status)),
   };
 }
 
@@ -1050,6 +1050,15 @@ export async function createAnalyticsEvent(event) {
   }
   dev.analytics_events.push(payload);
   return payload;
+}
+
+async function createNonCriticalAnalyticsEvent(event) {
+  try {
+    return await createAnalyticsEvent(event);
+  } catch (error) {
+    console.warn("Analytics event skipped", event.action, error?.message || error);
+    return null;
+  }
 }
 
 export async function applyFollowupAction({ followupId, userId, action, snoozeUntil, nextReminderAt }) {
@@ -1283,7 +1292,7 @@ export async function cancelFollowup({ followupId, userId }) {
       .update({ status: "cancelled", cancelled_at: timestamp(), updated_at: timestamp() })
       .eq("followup_id", followupId)
       .eq("status", "pending");
-    await createAnalyticsEvent({ event_id: followup.event_id, user_id: userId, action: "followup_cancelled", entity_id: followupId });
+    await createNonCriticalAnalyticsEvent({ event_id: followup.event_id, user_id: userId, action: "followup_cancelled", entity_id: followupId });
     return followup;
   }
   const followup = dev.followups.find((item) => item.id === followupId && item.owner_user_id === userId);

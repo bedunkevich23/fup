@@ -1,8 +1,8 @@
-import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { Check, Clock3, Plus, Search } from "lucide-react";
+import { Check, Clock3, Plus, Search, Trash2 } from "lucide-react";
 import { apiClient } from "../../lib/apiClient";
-import { hapticError, hapticSelection, hapticSuccess, openTelegramLink } from "../../lib/telegram";
+import { getTelegramBackButton, hapticError, hapticSelection, hapticSuccess, openTelegramLink } from "../../lib/telegram";
 import chevronLeftIconUrl from "../../assets/fup/chevron-left.svg";
 import checklistIconUrl from "../../assets/fup/checklist.svg";
 import fupLogoUrl from "../../assets/fup/logo.svg";
@@ -142,7 +142,7 @@ const assertJoinedEvent = (response: AnyRecord) => {
 };
 
 export function ParticipantApp() {
-  const [view, setView] = useState<ParticipantView>("today");
+  const [view, setViewState] = useState<ParticipantView>("today");
   const [me, setMe] = useState<AnyRecord | null>(null);
   const [event, setEvent] = useState<AnyRecord | null>(null);
   const [home, setHome] = useState<AnyRecord | null>(null);
@@ -155,6 +155,32 @@ export function ParticipantApp() {
   const [selectedContact, setSelectedContact] = useState<AnyRecord | null>(null);
   const [pendingVersion, setPendingVersion] = useState(0);
   const pendingRef = useRef(new Set<string>());
+  const returnViewRef = useRef<ParticipantView>("today");
+
+  const setView = useCallback((nextView: ParticipantView) => {
+    setViewState((currentView) => {
+      if (nextView === "save" && currentView !== "save") {
+        returnViewRef.current = currentView === "contact" ? returnViewRef.current : currentView;
+      }
+      if (!["save", "contact"].includes(nextView)) {
+        returnViewRef.current = nextView;
+      }
+      return nextView;
+    });
+  }, []);
+
+  const closeSave = useCallback(() => {
+    setViewState((currentView) => (currentView === "save" ? returnViewRef.current : currentView));
+  }, []);
+
+  const openContact = useCallback((contact: AnyRecord) => {
+    setSelectedContact(contact);
+    setViewState("contact");
+  }, []);
+
+  const goBack = useCallback(() => {
+    setView(returnViewRef.current || "today");
+  }, [setView]);
 
   const notify = (message: string, kind: ToastKind = "success") => {
     if (kind === "error") hapticError();
@@ -228,6 +254,26 @@ export function ParticipantApp() {
     });
   }, []);
 
+  useEffect(() => {
+    const backButton = getTelegramBackButton();
+    if (!backButton) return undefined;
+    if (view !== "contact") {
+      backButton.hide?.();
+      return undefined;
+    }
+
+    const handleBack = () => {
+      hapticSelection();
+      goBack();
+    };
+    backButton.show?.();
+    backButton.onClick?.(handleBack);
+    return () => {
+      backButton.offClick?.(handleBack);
+      backButton.hide?.();
+    };
+  }, [goBack, view]);
+
   return (
     <section
       className="fup-participant-shell mx-auto w-full max-w-[430px] overflow-hidden bg-[linear-gradient(180deg,rgba(255,255,255,0.90),rgba(245,250,255,0.78))] shadow-[0_24px_70px_rgba(29,29,31,0.10)] backdrop-blur-3xl sm:my-5 sm:h-[min(860px,calc(100dvh-40px))] sm:rounded-[34px] sm:border sm:border-white/70"
@@ -244,21 +290,29 @@ export function ParticipantApp() {
           {loading ? <LoadingScreen /> : null}
           {!loading && !me?.profileCompleted ? <ProfileScreen me={me} actions={actions} pendingVersion={pendingVersion} required /> : null}
           {!loading && me?.profileCompleted && !event && view !== "profile" ? <JoinEventScreen actions={actions} onProfile={() => setView("profile")} /> : null}
-          {!loading && me?.profileCompleted && event && view === "today" ? <TodayScreen me={me} event={event} home={home} contacts={contacts} members={members} hydrating={hydratingEvent} onContacts={() => setView("people")} onProfile={() => setView("profile")} onContact={(contact) => { setSelectedContact(contact); setView("contact"); }} /> : null}
-          {!loading && event && view === "people" ? <PeopleScreen event={event} members={members} contacts={contacts} me={me} actions={actions} /> : null}
+          {!loading && me?.profileCompleted && event && view === "today" ? <TodayScreen me={me} event={event} home={home} contacts={contacts} members={members} hydrating={hydratingEvent} onContacts={() => setView("people")} onProfile={() => setView("profile")} onContact={openContact} /> : null}
+          {!loading && event && view === "people" ? <ContactsScreen contacts={contacts} members={members} onContact={openContact} /> : null}
           {!loading && event && view === "save" ? <SaveScreen event={event} members={members} contacts={contacts} me={me} actions={actions} onDone={() => setView("today")} /> : null}
           {!loading && event && view === "followups" ? <FollowUpsScreen followUps={followUps} actions={actions} /> : null}
           {!loading && view === "profile" ? <ProfileScreen me={me} actions={actions} pendingVersion={pendingVersion} /> : null}
-          {!loading && me?.profileCompleted && event && view === "contact" && selectedContact ? <ContactDetailScreen contact={selectedContact} members={members} followUps={followUps} actions={actions} onBack={() => setView("today")} /> : null}
+          {!loading && me?.profileCompleted && event && view === "contact" && selectedContact ? <ContactDetailScreen contact={selectedContact} members={members} followUps={followUps} actions={actions} onBack={goBack} /> : null}
         </div>
-        {me?.profileCompleted ? <BottomNav view={view} setView={setView} /> : null}
+        {me?.profileCompleted ? <BottomNav view={view} setView={setView} closeSave={closeSave} /> : null}
         <Toast toast={toast} />
       </div>
     </section>
   );
 }
 
-function BottomNav({ view, setView }: { view: ParticipantView; setView: (view: ParticipantView) => void }) {
+function BottomNav({
+  view,
+  setView,
+  closeSave,
+}: {
+  view: ParticipantView;
+  setView: (view: ParticipantView) => void;
+  closeSave: () => void;
+}) {
   const nav = [
     { id: "today" as const, label: "Главная", iconUrl: squareGridIconUrl },
     { id: "people" as const, label: "Контакты", iconUrl: personIconUrl },
@@ -285,9 +339,15 @@ function BottomNav({ view, setView }: { view: ParticipantView; setView: (view: P
         })}
       </nav>
       <button
-        aria-label="Добавить контакт"
+        aria-label={view === "save" ? "Закрыть добавление контакта" : "Добавить контакт"}
         className={`button-press fup-add-button flex size-[64px] shrink-0 items-center justify-center rounded-full text-[#0087ff] ${view === "save" ? "is-active" : ""}`}
-        onClick={() => setView("save")}
+        onClick={() => {
+          if (view === "save") {
+            closeSave();
+            return;
+          }
+          setView("save");
+        }}
       >
         <Plus size={33} strokeWidth={2.2} />
       </button>
@@ -406,7 +466,7 @@ function Shelf({ title, subtitle, children, className = "" }: { title: string; s
   return (
     <section className={`fup-panel rounded-[34px] p-4 ${className}`}>
       <div className="mb-4 flex items-end justify-between gap-3">
-        <div>
+        <div className="min-w-0">
           <h3 className="fup-shelf-title text-[18px] font-semibold leading-tight text-black">{title}</h3>
           {subtitle ? <p className="mt-1 text-[13px] leading-5 text-slate-500">{subtitle}</p> : null}
         </div>
@@ -694,60 +754,54 @@ function RecentMeetingCard({ contact, user, onOpen }: { contact: AnyRecord; user
   );
 }
 
-function PeopleScreen({ event, members, contacts, me, actions }: { event: AnyRecord | null; members: AnyRecord[]; contacts: AnyRecord[]; me: AnyRecord | null; actions: AppActions }) {
+function ContactsScreen({
+  contacts,
+  members,
+  onContact,
+}: {
+  contacts: AnyRecord[];
+  members: AnyRecord[];
+  onContact: (contact: AnyRecord) => void;
+}) {
   const [query, setQuery] = useState("");
-  const currentUserId = me?.user?.id;
   const deferredQuery = useDeferredValue(query);
   const normalizedQuery = deferredQuery.trim().toLowerCase();
-  const visibleMembers = useMemo(
+  const visibleContacts = useMemo(
     () =>
-      members
-        .filter((member) => member.id !== currentUserId)
-        .filter((member) => {
+      contacts.filter((contact) => {
+          const user = contactUser(contact, members);
           if (!normalizedQuery) return true;
-          return [fullName(member), member.role, member.company, member.field, member.looking_for, member.can_help_with]
+          return [
+            contactName(contact, user),
+            contactUsername(contact),
+            contactPlace(contact),
+            contactStep(contact),
+            cleanContactContext(contact),
+            user?.role,
+            user?.company,
+            user?.field,
+          ]
             .filter(Boolean)
             .join(" ")
             .toLowerCase()
             .includes(normalizedQuery);
         }),
-    [currentUserId, members, normalizedQuery],
+    [contacts, members, normalizedQuery],
   );
-  const savedMemberIds = useMemo(() => new Set(contacts.map((contact) => contact.target_user_id).filter(Boolean)), [contacts]);
-
-  if (!event) {
-    return (
-      <div className="fup-screen space-y-5 py-2">
-        <Card className="p-6 text-center">
-          <h1 className="text-2xl font-semibold">Нет активного мероприятия</h1>
-          <p className="mt-3 text-[14px] leading-6 text-slate-500">Каталог появится после подключения к мероприятию по QR или invite-ссылке.</p>
-        </Card>
-      </div>
-    );
-  }
-
-  if (me?.user?.is_visible === false) {
-    return (
-      <div className="fup-screen space-y-4 py-1">
-        <ParticipantHeader kicker="Контакты" introKey="people-hidden" description="Каталог участников доступен, когда ваша анкета видна другим." />
-        <EmptyGlassState>Включите видимость в профиле, чтобы искать людей и сохранять контакты из каталога.</EmptyGlassState>
-      </div>
-    );
-  }
 
   return (
     <div className="fup-screen space-y-4 py-1">
       <ParticipantHeader
         kicker="Контакты"
-        introKey="people"
-        description="Смотрите анкеты участников и сохраняйте тех, к кому важно вернуться после встречи."
+        introKey="contacts"
+        description="Здесь только сохраненные знакомства, к которым можно вернуться после события."
       />
       <div className="fup-control flex h-14 items-center gap-2 rounded-[28px] px-4">
         <Search size={18} className="text-slate-400" />
         <input
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder="Поиск по роли, компании или запросу"
+          placeholder="Поиск по имени, контексту или шагу"
           autoComplete="off"
           autoCorrect="off"
           spellCheck={false}
@@ -756,62 +810,16 @@ function PeopleScreen({ event, members, contacts, me, actions }: { event: AnyRec
         />
       </div>
       <div className="space-y-3">
-        {visibleMembers.map((member) => {
-          const key = `people-save-${member.id}`;
-          const saved = savedMemberIds.has(member.id);
-          return (
-            <article key={member.id} className="fup-card rounded-[32px] p-4">
-              <div className="flex items-start gap-3">
-                <RoundAvatar user={member} label={fullName(member)} className="size-14" />
-                <div className="min-w-0 flex-1 pt-0.5">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="truncate text-[17px] font-semibold text-black">{fullName(member)}</p>
-                      <p className="mt-1 text-[13px] text-slate-500">{roleToRu[member.role] || member.role || "Участник"}{member.company ? ` · ${member.company}` : ""}</p>
-                    </div>
-                    <ConnectionBadge type="internal" />
-                  </div>
-                </div>
-              </div>
-              <div className="mt-4 grid gap-2">
-                <CompactInfoBlock label="Ищет" value={member.looking_for || "Не указано"} />
-                <CompactInfoBlock label="Может помочь" value={member.can_help_with || "Не указано"} />
-              </div>
-              {saved ? (
-                <span className="fup-confirm-action mt-4">Уже в контактах</span>
-              ) : (
-                <Button
-                  className="mt-4 w-full"
-                  disabled={actions.isPending(key)}
-                  onClick={async () => {
-                      const result = (await actions.runAction(
-                        key,
-                        async () =>
-                          apiClient.createContact(event.id, {
-                            targetUserId: member.id,
-                            contactName: fullName(member),
-                            contactUsername: usernameOf(member),
-                            source: "program_member",
-                            whereMet: "Каталог участников",
-                            context: [member.looking_for, member.can_help_with].filter(Boolean).join("\n"),
-                            nextStepType: "Написать",
-                            nextStepText: "Написать",
-                            remindAt: remindAtFromDays(1),
-                          }),
-                        "Знакомство сохранено",
-                      )) as AnyRecord | undefined;
-                      if (!result) return;
-                      hapticSuccess();
-                      await actions.refresh();
-                  }}
-                >
-                  {actions.isPending(key) ? "Сохраняем..." : "Сохранить"}
-                </Button>
-              )}
-            </article>
-          );
-        })}
-        {!visibleMembers.length ? <EmptyGlassState>Подходящих участников пока нет.</EmptyGlassState> : null}
+        {visibleContacts.map((contact) => (
+          <RecentMeetingCard
+            key={contact.id}
+            contact={contact}
+            user={contactUser(contact, members)}
+            onOpen={() => onContact(contact)}
+          />
+        ))}
+        {!contacts.length ? <EmptyGlassState>Сохраненных контактов пока нет. Нажмите плюс, чтобы добавить первое знакомство.</EmptyGlassState> : null}
+        {contacts.length && !visibleContacts.length ? <EmptyGlassState>По этому запросу сохраненных контактов нет.</EmptyGlassState> : null}
       </div>
     </div>
   );
@@ -1016,21 +1024,22 @@ function ProgramMemberPicker({ event, members, contacts, me, actions, onSaved }:
 function FollowUpsScreen({ followUps, actions }: { followUps: AnyRecord[]; actions: AppActions }) {
   const [nextAction, setNextAction] = useState<{ followUp: AnyRecord; action: "message_sent" | "meeting_booked"; message: string } | null>(null);
   const today = new Date().toDateString();
+  const visibleFollowUps = followUps.filter((item) => item.status !== "cancelled");
   const groups = [
     {
       title: "Сегодня",
       empty: "На сегодня чисто. Новые действия появятся здесь, когда подойдет время.",
-      items: followUps.filter((item) => new Date(followUpDate(item)).toDateString() === today && !["completed", "result"].includes(item.status)),
+      items: visibleFollowUps.filter((item) => new Date(followUpDate(item)).toDateString() === today && !["completed", "result"].includes(item.status)),
     },
     {
       title: "Скоро",
       empty: "Пока пусто. FUP положит сюда задачи, которые запланированы на следующие дни.",
-      items: followUps.filter((item) => new Date(followUpDate(item)).toDateString() !== today && !["completed", "result"].includes(item.status)),
+      items: visibleFollowUps.filter((item) => new Date(followUpDate(item)).toDateString() !== today && !["completed", "result"].includes(item.status)),
     },
     {
       title: "Выполнено",
       empty: "Готовых действий пока нет. Как только отметите шаг, он появится здесь.",
-      items: followUps.filter((item) => item.status === "completed" || item.status === "result"),
+      items: visibleFollowUps.filter((item) => item.status === "completed" || item.status === "result"),
     },
   ];
 
@@ -1075,14 +1084,14 @@ function FollowUpCard({
   return (
     <div className="fup-card rounded-[28px] p-3.5">
       <div className="flex items-start justify-between gap-3">
-        <div>
+        <div className="min-w-0">
           <p className="text-[17px] font-semibold text-black">{contactName(contact)}</p>
           <p className="mt-1 text-[13px] text-slate-500">
             {["completed", "result"].includes(followUp.status) ? "Последнее действие: " : "Сделать до: "}
             {formatDate(followUpCardDate(followUp))}
           </p>
         </div>
-        <span className="fup-subpanel rounded-full px-3 py-1 text-[11px] font-semibold text-slate-500">{statusLabel[followUp.status] || followUp.status}</span>
+        <span className="fup-status-badge">{statusLabel[followUp.status] || followUp.status}</span>
       </div>
       {cleanContactContext(contact) ? <p className="mt-3 text-[13px] leading-5 text-slate-600">{cleanContactContext(contact)}</p> : null}
       <p className="mt-3 text-[13px] font-semibold text-[#1d1d1f]">Следующий шаг: {contactStep(contact)}</p>
@@ -1108,7 +1117,7 @@ function FollowUpCard({
           <Button variant="soft" onClick={() => onNextAction("message_sent", "Сообщение отмечено")}>Я написал</Button>
           <Button variant="soft" onClick={() => onNextAction("meeting_booked", "Встреча отмечена")}>Назначил встречу</Button>
           <Button
-            className="col-span-2"
+            className="fup-danger-action col-span-2"
             variant="ghost"
             disabled={actions.isPending(`followup-${followUp.id}-delete`)}
             onClick={async () => {
@@ -1121,6 +1130,7 @@ function FollowUpCard({
               await actions.refresh();
             }}
           >
+            <Trash2 size={15} />
             Удалить задачу
           </Button>
         </div>
@@ -1200,7 +1210,7 @@ function ContactDetailScreen({
   const user = contactUser(contact, members);
   const username = contactUsername(contact) || usernameOf(user || {});
   const followUp = followUps.find((item) => followUpContact(item)?.id === contact.id);
-  const activeFollowUp = followUp && !["completed", "result"].includes(followUp.status) ? followUp : null;
+  const activeFollowUp = followUp && !["completed", "result", "cancelled"].includes(followUp.status) ? followUp : null;
   const context = cleanContactContext(contact);
   const [nextAction, setNextAction] = useState<{ action: "message_sent" | "meeting_booked"; message: string } | null>(null);
   const openChat = async () => {
@@ -1217,7 +1227,7 @@ function ContactDetailScreen({
 
   return (
     <div className="fup-screen space-y-4 py-1">
-      <IconCircleButton iconUrl={chevronLeftIconUrl} label="Назад" className="apple-icon-button--back" onClick={onBack} />
+      {!getTelegramBackButton() ? <IconCircleButton iconUrl={chevronLeftIconUrl} label="Назад" className="apple-icon-button--back" onClick={onBack} /> : null}
       <section className="fup-panel rounded-[36px] p-5">
         <div className="flex items-start gap-4">
           <RoundAvatar user={user} label={contactName(contact, user)} className="size-[76px]" />
@@ -1240,7 +1250,7 @@ function ContactDetailScreen({
           {activeFollowUp ? <Button variant="soft" onClick={() => setNextAction({ action: "meeting_booked", message: "Встреча отмечена" })}>Назначил встречу</Button> : null}
           {activeFollowUp ? <SnoozeDateButton followUp={activeFollowUp} actions={actions} /> : null}
           <Button
-            className="sm:col-span-2"
+            className="fup-danger-action sm:col-span-2"
             variant="ghost"
             disabled={actions.isPending(`contact-${contact.id}-delete`)}
             onClick={async () => {
@@ -1254,6 +1264,7 @@ function ContactDetailScreen({
               onBack();
             }}
           >
+            <Trash2 size={15} />
             Удалить контакт
           </Button>
         </div>
