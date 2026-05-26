@@ -35,14 +35,26 @@ const nextStepMap = {
   "Назначить звонок": "book_meeting",
   "Сделать intro": "introduce_person",
   "Вернуться позже": "return_later",
+  "Свой вариант": "custom",
   message: "write_message",
   sent_message: "write_message",
   meeting_booked: "book_meeting",
   intro_made: "introduce_person",
   person_introduced: "introduce_person",
 };
+const allowedNextStepTypes = new Set([
+  "write_message",
+  "send_materials",
+  "book_meeting",
+  "introduce_person",
+  "return_later",
+  "custom",
+]);
 const toDbRole = (role) => roleMap[role] || role || "other";
-const toDbNextStepType = (value) => nextStepMap[value] || value || "write_message";
+const toDbNextStepType = (value) => {
+  const normalized = nextStepMap[value] || value || "write_message";
+  return allowedNextStepTypes.has(normalized) ? normalized : "custom";
+};
 const tagsFrom = (text) =>
   String(text || "")
     .toLowerCase()
@@ -55,6 +67,7 @@ const recentTimestamp = (minutes) => new Date(Date.now() - minutes * 60 * 1000).
 const INVITE_CODE_TTL_MS = 24 * 60 * 60 * 1000;
 const inviteCodeFrom = () => Math.random().toString(36).slice(2, 8).toUpperCase();
 const eventSettings = (event = {}) => event.settings && typeof event.settings === "object" && !Array.isArray(event.settings) ? event.settings : {};
+const TELEGRAM_BOT_USERNAME = "fupfupfup_bot";
 const inviteExpiresAt = (fromTime = Date.now()) => new Date(fromTime + INVITE_CODE_TTL_MS).toISOString();
 const inviteExpiresAtOf = (event = {}) => {
   const configured = eventSettings(event).invite_code_expires_at;
@@ -1594,7 +1607,7 @@ async function refreshExpiredInvite(event) {
 
 export function getInvitePayload(event) {
   const webappUrl = process.env.WEBAPP_URL || "http://localhost:3000";
-  const bot = process.env.TELEGRAM_BOT_USERNAME;
+  const bot = process.env.TELEGRAM_BOT_USERNAME || TELEGRAM_BOT_USERNAME;
   const webJoinUrl = `${webappUrl}/join/${encodeURIComponent(event.invite_code)}`;
   const telegramMiniAppUrl = bot
     ? `https://t.me/${bot.replace("@", "")}?startapp=${encodeURIComponent(event.invite_code)}`

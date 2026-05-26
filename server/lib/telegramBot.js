@@ -20,8 +20,10 @@ const cadenceLabel = (cadenceKey) => {
   return "";
 };
 
+const TELEGRAM_BOT_USERNAME = "fupfupfup_bot";
+
 export function getMiniAppUrl(startParam = "fup") {
-  const bot = process.env.TELEGRAM_BOT_USERNAME;
+  const bot = process.env.TELEGRAM_BOT_USERNAME || TELEGRAM_BOT_USERNAME;
   if (bot) {
     const username = bot.replace("@", "");
     return `https://t.me/${username}?startapp=${encodeURIComponent(startParam || "fup")}`;
