@@ -144,19 +144,21 @@ export default function App() {
 function OrganizerLogin({ authMessage, returnTo }: { authMessage: string; returnTo: string }) {
   const loginUrl = `/api/auth/telegram-login/start?returnTo=${encodeURIComponent(returnTo || "/organizer")}`;
   return (
-    <main className="flex min-h-screen items-center justify-center px-4 py-8">
-      <Card className="w-full max-w-[560px] p-7 text-center sm:p-9">
-        <div className="mx-auto mb-6 flex size-16 items-center justify-center rounded-[24px] liquid-control text-2xl font-semibold text-[#0066cc]">
-          F
+    <main className="organizer-login-shell relative flex min-h-screen items-center justify-center overflow-hidden px-4 py-8">
+      <div aria-hidden className="organizer-login-glow" />
+      <Card className="organizer-login-card w-full max-w-[560px] p-7 text-center sm:p-9">
+        <div className="mx-auto mb-6 flex size-[68px] items-center justify-center rounded-[26px] bg-white/70 shadow-[0_18px_40px_rgba(23,36,51,0.10)] backdrop-blur-2xl">
+          <img src={fupLogoUrl} alt="FUP" className="h-9 w-auto" />
         </div>
-        <div className="liquid-control mx-auto inline-flex rounded-full px-4 py-2 text-[13px] font-semibold text-[#0066cc]">
+        <div className="organizer-chip mx-auto inline-flex">
           Кабинет организатора
         </div>
-        <h1 className="mt-5 text-4xl font-semibold tracking-[-0.02em] text-[#1d1d1f]">Войдите через Telegram</h1>
+        <h1 className="fup-display mt-5 text-[34px] leading-tight text-[#1d1d1f] sm:text-[42px]">Авторизируйтесь</h1>
         <p className="mt-4 text-[15px] leading-7 text-slate-600">
           Мы подтвердим Telegram-аккаунт через защищенный web-login. Если у вас уже есть организация, откроется кабинет; если нет — понадобится ключ доступа FUP.
         </p>
-        <a className="liquid-blue button-press mt-7 inline-flex min-h-12 items-center justify-center rounded-full px-6 py-3 text-[15px] font-semibold text-white" href={loginUrl}>
+        <a className="organizer-primary-link button-press mt-7 inline-flex min-h-12 items-center justify-center gap-2 rounded-full px-6 py-3 text-[15px] font-semibold text-white" href={loginUrl}>
+          <span className="organizer-button-logo"><img src={fupLogoUrl} alt="" /></span>
           Войти через Telegram
         </a>
         {authMessage ? <p className="mt-5 text-[13px] leading-6 text-rose-500">{authMessage}</p> : null}

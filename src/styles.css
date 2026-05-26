@@ -3,6 +3,15 @@
 @tailwind utilities;
 
 :root {
+  --fup-display-font:
+    "Neutral Face",
+    "Unbounded",
+    -apple-system,
+    BlinkMacSystemFont,
+    "SF Pro Display",
+    "SF Pro Text",
+    system-ui,
+    sans-serif;
   color: #1d1d1f;
   background: #f5f5f7;
   font-family:
@@ -69,11 +78,12 @@ button:disabled {
 
 .button-press {
   transition:
-    transform 160ms cubic-bezier(0.2, 0, 0.2, 1),
-    box-shadow 180ms ease,
-    background-color 180ms ease,
-    border-color 180ms ease,
-    opacity 180ms ease;
+    transform 210ms cubic-bezier(0.2, 0, 0.2, 1),
+    box-shadow 220ms ease,
+    background-color 220ms ease,
+    border-color 220ms ease,
+    color 220ms ease,
+    opacity 220ms ease;
 }
 
 .button-press:active {
@@ -100,14 +110,7 @@ button:disabled {
 }
 
 .fup-display {
-  font-family:
-    "Neutral Face",
-    -apple-system,
-    BlinkMacSystemFont,
-    "SF Pro Display",
-    "SF Pro Text",
-    system-ui,
-    sans-serif;
+  font-family: var(--fup-display-font);
   font-weight: 400;
   letter-spacing: 0;
 }
@@ -136,33 +139,38 @@ button:disabled {
 
 .fup-screen {
   color: #090909;
+  animation: viewEnter 430ms cubic-bezier(0.2, 0, 0.2, 1) both;
 }
 
 .fup-screen-header {
-  animation: shelfIn 360ms ease both;
+  animation: shelfIn 430ms cubic-bezier(0.2, 0, 0.2, 1) both;
   padding-bottom: 4px;
 }
 
 .fup-intro-copy {
   overflow: hidden;
   transition:
-    max-height 520ms cubic-bezier(0.2, 0, 0.2, 1),
-    opacity 420ms ease,
-    transform 420ms ease,
-    margin-top 520ms ease;
+    max-height 380ms cubic-bezier(0.2, 0, 0.2, 1),
+    opacity 300ms ease,
+    transform 380ms cubic-bezier(0.2, 0, 0.2, 1),
+    filter 300ms ease,
+    margin-top 380ms ease;
 }
 
 .fup-intro-copy.is-visible {
   max-height: 120px;
   opacity: 1;
+  filter: blur(0);
   transform: translateY(0);
+  animation: introCopyIn 440ms cubic-bezier(0.2, 0, 0.2, 1) both;
 }
 
 .fup-intro-copy.is-hidden {
   max-height: 0;
   margin-top: 0;
   opacity: 0;
-  transform: translateY(-4px);
+  filter: blur(3px);
+  transform: translateY(-8px);
 }
 
 .apple-icon-button {
@@ -262,16 +270,199 @@ button:disabled {
     inset 0 1px 1px rgba(255, 255, 255, 0.98);
   backdrop-filter: blur(28px) saturate(170%);
   -webkit-backdrop-filter: blur(28px) saturate(170%);
+  transition:
+    transform 260ms cubic-bezier(0.2, 0, 0.2, 1),
+    box-shadow 260ms ease,
+    background 260ms ease;
 }
 
-.organizer-surface {
-  border: 1px solid rgba(255, 255, 255, 0.82);
-  background: linear-gradient(150deg, rgba(255, 255, 255, 0.76), rgba(240, 247, 255, 0.68));
+.organizer-login-shell,
+.organizer-shell {
+  background:
+    radial-gradient(circle at 16% 12%, rgba(255, 255, 255, 0.96), transparent 28%),
+    radial-gradient(circle at 86% 18%, rgba(223, 240, 255, 0.72), transparent 30%),
+    linear-gradient(145deg, rgba(249, 251, 255, 0.98), rgba(236, 245, 255, 0.92) 55%, rgba(250, 249, 253, 0.96));
+}
+
+.organizer-login-glow {
+  position: absolute;
+  inset: auto -80px -180px -80px;
+  height: 380px;
+  background:
+    radial-gradient(circle at 35% 40%, rgba(0, 122, 255, 0.13), transparent 36%),
+    radial-gradient(circle at 70% 46%, rgba(52, 199, 89, 0.08), transparent 32%);
+  filter: blur(18px);
+}
+
+.organizer-surface,
+.organizer-card,
+.organizer-topbar,
+.organizer-login-card {
+  border: 1px solid rgba(255, 255, 255, 0.78);
+  background:
+    radial-gradient(circle at 18% 0%, rgba(255, 255, 255, 0.9), transparent 38%),
+    linear-gradient(150deg, rgba(255, 255, 255, 0.64), rgba(246, 250, 255, 0.78));
   box-shadow:
-    0 18px 42px rgba(22, 32, 46, 0.09),
+    0 18px 46px rgba(22, 32, 46, 0.08),
     inset 0 1px 1px rgba(255, 255, 255, 0.98);
-  backdrop-filter: blur(24px) saturate(150%);
-  -webkit-backdrop-filter: blur(24px) saturate(150%);
+  backdrop-filter: blur(30px) saturate(170%);
+  -webkit-backdrop-filter: blur(30px) saturate(170%);
+}
+
+.organizer-hero {
+  position: relative;
+  overflow: hidden;
+}
+
+.organizer-hero::after {
+  position: absolute;
+  right: -120px;
+  bottom: -150px;
+  width: 320px;
+  height: 320px;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(0, 122, 255, 0.11), transparent 62%);
+  content: "";
+  pointer-events: none;
+}
+
+.organizer-chip {
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.78);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.58);
+  color: #0066cc;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 8px 18px rgba(23, 36, 51, 0.04);
+  backdrop-filter: blur(18px) saturate(165%);
+  -webkit-backdrop-filter: blur(18px) saturate(165%);
+}
+
+.organizer-logo-tile,
+.organizer-button-logo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow:
+    0 12px 28px rgba(23, 36, 51, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.94);
+  backdrop-filter: blur(20px) saturate(170%);
+  -webkit-backdrop-filter: blur(20px) saturate(170%);
+}
+
+.organizer-logo-tile {
+  width: 64px;
+  height: 64px;
+  border-radius: 24px;
+}
+
+.organizer-button-logo {
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+}
+
+.organizer-button-logo img {
+  width: 16px;
+  height: auto;
+}
+
+.organizer-primary-link,
+.organizer-create-button {
+  background: #007aff;
+  box-shadow:
+    0 12px 26px rgba(0, 122, 255, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+
+.organizer-primary-link:hover,
+.organizer-create-button:hover {
+  background: #006fe8;
+}
+
+.organizer-note,
+.organizer-list-row,
+.organizer-mini-metric,
+.organizer-toggle-row {
+  border: 1px solid rgba(255, 255, 255, 0.68);
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.52);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.88),
+    0 8px 18px rgba(23, 36, 51, 0.035);
+  backdrop-filter: blur(22px) saturate(155%);
+  -webkit-backdrop-filter: blur(22px) saturate(155%);
+}
+
+.organizer-note,
+.organizer-list-row,
+.organizer-toggle-row {
+  padding: 12px 14px;
+  color: #5f6873;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.organizer-input {
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.58);
+  color: #1d1d1f;
+  outline: none;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(18px) saturate(155%);
+  -webkit-backdrop-filter: blur(18px) saturate(155%);
+  transition:
+    border-color 180ms ease,
+    background 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.organizer-input:focus {
+  border-color: rgba(0, 122, 255, 0.24);
+  background: rgba(255, 255, 255, 0.78);
+  box-shadow:
+    0 0 0 4px rgba(0, 122, 255, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+.organizer-status-pill {
+  display: inline-flex;
+  min-height: 28px;
+  align-items: center;
+  border-radius: 999px;
+  background: rgba(245, 247, 250, 0.78);
+  color: #64748b;
+  padding: 0 11px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.organizer-icon-button {
+  display: inline-flex;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: rgba(245, 249, 255, 0.8);
+  color: #007aff;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  transition: transform 160ms ease, background 180ms ease;
+}
+
+.organizer-icon-button:active {
+  transform: scale(0.96);
 }
 
 .organizer-back-button {
@@ -282,8 +473,8 @@ button:disabled {
   justify-content: center;
   border: 1px solid rgba(255, 255, 255, 0.78);
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.66);
-  color: #0087ff;
+  background: rgba(255, 255, 255, 0.62);
+  color: #007aff;
   box-shadow:
     0 10px 24px rgba(22, 32, 46, 0.07),
     inset 0 1px 1px rgba(255, 255, 255, 0.96);
@@ -348,6 +539,10 @@ button:disabled {
     inset 0 1px 0 rgba(255, 255, 255, 0.9);
   backdrop-filter: blur(22px) saturate(155%);
   -webkit-backdrop-filter: blur(22px) saturate(155%);
+  transition:
+    transform 240ms cubic-bezier(0.2, 0, 0.2, 1),
+    box-shadow 240ms ease,
+    background 240ms ease;
 }
 
 .fup-home-star {
@@ -403,12 +598,25 @@ button:disabled {
     inset 0 -1px 0 rgba(255, 255, 255, 0.45);
   backdrop-filter: blur(28px) saturate(165%);
   -webkit-backdrop-filter: blur(28px) saturate(165%);
+  transition:
+    transform 260ms cubic-bezier(0.2, 0, 0.2, 1),
+    box-shadow 260ms ease,
+    background 260ms ease;
 }
 
 .fup-meeting-action {
-  width: min(190px, 100%);
-  background: #0087ff;
-  box-shadow: none;
+  min-height: 38px;
+  max-width: 100%;
+  border-radius: 999px;
+  background: #007aff;
+  color: #fff;
+  padding: 0 14px;
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.1;
+  box-shadow:
+    0 10px 22px rgba(0, 122, 255, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
 }
 
 .fup-flat-action,
@@ -427,9 +635,12 @@ button:disabled {
 }
 
 .fup-muted-action {
-  border: 1px solid rgba(255, 255, 255, 0.72);
-  background: rgba(255, 255, 255, 0.62);
-  color: #7b848e;
+  border: 1px solid transparent;
+  background: rgba(255, 255, 255, 0.66);
+  color: #5f6873;
+  box-shadow:
+    0 8px 18px rgba(23, 36, 51, 0.04),
+    inset 0 1px 0 rgba(255, 255, 255, 0.82);
   backdrop-filter: blur(18px) saturate(160%);
   -webkit-backdrop-filter: blur(18px) saturate(160%);
 }
@@ -453,22 +664,70 @@ button:disabled {
 }
 
 .fup-danger-action {
-  border: 1px solid rgba(244, 63, 94, 0.18);
-  background: rgba(255, 241, 242, 0.58);
-  color: #e11d48;
+  border-color: transparent;
+  background: rgba(255, 59, 48, 0.1);
+  color: #ff3b30;
+  box-shadow: none;
   backdrop-filter: blur(18px) saturate(160%);
   -webkit-backdrop-filter: blur(18px) saturate(160%);
 }
 
 .fup-danger-action:hover {
-  border-color: rgba(244, 63, 94, 0.28);
-  background: rgba(255, 241, 242, 0.82);
+  border-color: transparent;
+  background: rgba(255, 59, 48, 0.16);
+}
+
+.fup-card-date {
+  display: inline-flex;
+  min-height: 26px;
+  align-items: center;
+  border-radius: 999px;
+  background: rgba(245, 247, 250, 0.86);
+  color: #7b848e;
+  padding: 0 9px;
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1;
+}
+
+.fup-contact-field {
+  min-height: 58px;
+  border-radius: 20px;
+  background: rgba(246, 248, 251, 0.78);
+  padding: 10px 12px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.86);
+}
+
+.fup-contact-field span {
+  display: block;
+  color: #7b848e;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.fup-contact-field p {
+  margin-top: 6px;
+  color: #1d1d1f;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.fup-contact-detail-grid .fup-subpanel {
+  min-height: 58px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
 }
 
 .fup-status-badge {
   display: inline-flex;
-  width: 128px;
-  min-height: 34px;
+  width: clamp(116px, 34vw, 146px);
+  min-height: 36px;
   flex-shrink: 0;
   align-items: center;
   justify-content: center;
@@ -476,11 +735,11 @@ button:disabled {
   border-radius: 999px;
   background: linear-gradient(150deg, rgba(255, 255, 255, 0.56), rgba(255, 255, 255, 0.76));
   color: #64748b;
-  padding: 5px 10px;
+  padding: 6px 10px;
   text-align: center;
-  font-size: 10.5px;
+  font-size: 10px;
   font-weight: 650;
-  line-height: 1.08;
+  line-height: 1.12;
   box-shadow:
     0 10px 24px rgba(23, 36, 51, 0.045),
     inset 0 1px 0 rgba(255, 255, 255, 0.9);
@@ -489,14 +748,7 @@ button:disabled {
 }
 
 .fup-shelf-title {
-  font-family:
-    "Neutral Face",
-    -apple-system,
-    BlinkMacSystemFont,
-    "SF Pro Display",
-    "SF Pro Text",
-    system-ui,
-    sans-serif;
+  font-family: var(--fup-display-font);
   font-size: 17px;
   font-weight: 400;
   letter-spacing: 0;
@@ -516,6 +768,10 @@ button:disabled {
     inset 0 1px 0 rgba(255, 255, 255, 0.92);
   backdrop-filter: blur(24px) saturate(150%);
   -webkit-backdrop-filter: blur(24px) saturate(150%);
+  transition:
+    transform 260ms cubic-bezier(0.2, 0, 0.2, 1),
+    box-shadow 260ms ease,
+    background 260ms ease;
 }
 
 .fup-avatar-fallback {
@@ -540,6 +796,32 @@ button:disabled {
 .fup-bottom-nav {
   align-items: center;
   overflow: hidden;
+  position: relative;
+  touch-action: none;
+}
+
+.fup-tab-indicator {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  left: 0;
+  z-index: 0;
+  border-radius: 24px;
+  background: linear-gradient(145deg, rgba(226, 227, 229, 0.82), rgba(241, 242, 244, 0.58));
+  box-shadow:
+    inset 0 1px 1px rgba(255, 255, 255, 0.96),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.4),
+    0 8px 18px rgba(23, 36, 51, 0.06);
+  transition:
+    transform 360ms cubic-bezier(0.18, 0.82, 0.24, 1),
+    width 260ms cubic-bezier(0.2, 0, 0.2, 1);
+  will-change: transform, width;
+}
+
+.fup-tab-indicator.is-dragging {
+  transition:
+    transform 90ms linear,
+    width 160ms ease;
 }
 
 .fup-tab {
@@ -547,14 +829,21 @@ button:disabled {
   outline: none;
   position: relative;
   z-index: 1;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+  transition:
+    transform 220ms cubic-bezier(0.2, 0, 0.2, 1),
+    background 220ms ease,
+    border-color 220ms ease,
+    color 220ms ease,
+    box-shadow 220ms ease;
 }
 
 .fup-tab.is-active {
-  border: 1px solid rgba(255, 255, 255, 0.62);
-  background: linear-gradient(145deg, rgba(222, 223, 225, 0.72), rgba(235, 236, 238, 0.54));
-  box-shadow:
-    inset 0 1px 1px rgba(255, 255, 255, 0.96),
-    inset 0 -1px 0 rgba(255, 255, 255, 0.36);
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
 }
 
 .fup-tab:focus-visible {
@@ -568,6 +857,13 @@ button:disabled {
     0 18px 44px rgba(23, 36, 51, 0.16),
     0 0 0 1px rgba(0, 135, 255, 0.12),
     inset 0 1px 1px rgba(255, 255, 255, 0.98);
+}
+
+.fup-add-button {
+  transition:
+    transform 260ms cubic-bezier(0.2, 0, 0.2, 1),
+    box-shadow 260ms ease,
+    background 260ms ease;
 }
 
 .fup-add-button svg {
@@ -594,12 +890,19 @@ button:disabled {
 .fup-tab.is-active .fup-nav-icon {
   filter: brightness(0) saturate(100%) invert(42%) sepia(98%) saturate(3448%) hue-rotate(192deg) brightness(104%) contrast(102%);
   opacity: 1;
+  transform: translateY(-1px) scale(1.04);
 }
 
 .fup-action-grid button {
   min-width: 0;
-  padding-inline: 12px;
+  min-height: 42px;
+  padding-inline: 14px;
   font-size: 13px;
+}
+
+.fup-action-grid button svg,
+.fup-meeting-action svg {
+  flex-shrink: 0;
 }
 
 .fup-launch-progress {
@@ -629,6 +932,30 @@ button:disabled {
   to {
     opacity: 1;
     transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes viewEnter {
+  from {
+    opacity: 0;
+    transform: translateY(18px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes introCopyIn {
+  from {
+    opacity: 0;
+    filter: blur(5px);
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    filter: blur(0);
+    transform: translateY(0);
   }
 }
 

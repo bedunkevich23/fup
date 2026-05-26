@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { QRCodeSVG } from "qrcode.react";
-import { ArrowLeft, Building2, Calendar, Copy, Eye, FileText, Plus, QrCode, Radio, Sparkles, Users, Waypoints } from "lucide-react";
+import { ArrowLeft, Calendar, Copy, Eye, FileText, QrCode, Radio, Sparkles, Users, Waypoints } from "lucide-react";
 import { apiClient } from "../../lib/apiClient";
 import fupLogoUrl from "../../assets/fup/logo.svg";
 import { Button } from "../ui/Button";
@@ -62,28 +62,29 @@ function OrganizerHome() {
 
   return (
     <Shell>
-      <header className="organizer-surface rounded-[32px] p-6 sm:p-8">
+      <header className="organizer-surface organizer-hero rounded-[32px] p-6 sm:p-8">
         <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <div className="liquid-control inline-flex rounded-full px-4 py-2 text-[13px] font-semibold text-[#0066cc]">
+            <div className="organizer-chip inline-flex">
               Кабинет организатора
             </div>
-            <h1 className="mt-5 text-[38px] font-semibold tracking-[-0.02em] text-[#1d1d1f] sm:text-[52px]">
+            <h1 className="fup-display mt-5 text-[34px] leading-tight text-[#1d1d1f] sm:text-[48px]">
               Мероприятия и live-статистика
             </h1>
             <p className="mt-3 max-w-2xl text-[17px] leading-7 text-slate-600">
               Создавайте события, показывайте участникам QR и смотрите, как знакомства превращаются в follow-ups и результаты.
             </p>
           </div>
-          <Button onClick={() => navigate("/organizer/events/new")}>
-            <Plus size={18} /> Создать мероприятие
+          <Button className="organizer-create-button" onClick={() => navigate("/organizer/events/new")}>
+            <span className="organizer-button-logo"><img src={fupLogoUrl} alt="" /></span>
+            Создать мероприятие
           </Button>
         </div>
       </header>
 
       <div className="mt-5 grid gap-4 lg:grid-cols-3">
         {orgMe.organizations.map((item: AnyRecord) => (
-          <Card key={item.organization.id} className="p-5">
+          <Card key={item.organization.id} className="organizer-card p-5">
             <p className="text-[13px] font-semibold text-[#0066cc]">Организация</p>
             <h2 className="mt-2 text-2xl font-semibold">{item.organization.name}</h2>
             <p className="mt-2 text-[14px] text-slate-500">Роль: {item.role}</p>
@@ -98,14 +99,14 @@ function OrganizerHome() {
         </div>
         <div className="grid auto-rows-fr gap-4 lg:grid-cols-2">
           {events.map((event: AnyRecord) => (
-            <Card key={event.id} className="p-5 transition duration-200 hover:-translate-y-1">
+            <Card key={event.id} className="organizer-card p-5 transition duration-200 hover:-translate-y-1">
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <p className="text-[13px] font-semibold text-[#0066cc]">{event.organization?.name}</p>
                   <h3 className="mt-2 text-2xl font-semibold">{event.name}</h3>
                   <p className="mt-2 text-[14px] leading-6 text-slate-500">{event.description || "Описание появится позже"}</p>
                 </div>
-                <span className="rounded-full bg-white/60 px-3 py-1 text-[12px] font-semibold text-slate-600">
+                <span className="organizer-status-pill">
                   {event.status || "draft"}
                 </span>
               </div>
@@ -171,22 +172,22 @@ function OrganizationOnboarding({ user, onCreated }: { user?: AnyRecord; onCreat
 
   return (
     <div className="grid min-h-[72vh] items-center gap-6 lg:grid-cols-[0.92fr_1.08fr]">
-      <Card className="p-6 sm:p-8">
-        <div className="liquid-control inline-flex h-16 w-16 items-center justify-center rounded-[24px] text-[#0066cc]">
-          <Building2 size={28} />
+      <Card className="organizer-card p-6 sm:p-8">
+        <div className="organizer-logo-tile">
+          <img src={fupLogoUrl} alt="FUP" className="h-8 w-auto" />
         </div>
-        <h1 className="mt-6 text-[38px] font-semibold tracking-[-0.02em] text-[#1d1d1f] sm:text-[50px]">
+        <h1 className="fup-display mt-6 text-[34px] leading-tight text-[#1d1d1f] sm:text-[46px]">
           Создайте организацию
         </h1>
         <p className="mt-4 text-[17px] leading-7 text-slate-600">
           Организация — это рабочее пространство для мероприятий, команды, ссылок приглашения и live-аналитики.
         </p>
-        <div className="mt-6 rounded-[26px] border border-white/70 bg-white/45 p-4 text-[14px] leading-6 text-slate-600">
+        <div className="organizer-note mt-6">
           Вы вошли через Telegram{user?.telegram_username ? ` как @${user.telegram_username}` : ""}. Введите ключ доступа, чтобы подключить кабинет организатора.
         </div>
       </Card>
 
-      <Card className="p-6 sm:p-8">
+      <Card className="organizer-card p-6 sm:p-8">
         <div className="grid gap-5">
           <Field label="Ключ доступа" type="password" value={form.accessCode} onChange={(accessCode) => setForm({ ...form, accessCode })} />
           <Field label="Название организации" value={form.name} onChange={(name) => setForm({ ...form, name })} />
@@ -195,7 +196,7 @@ function OrganizationOnboarding({ user, onCreated }: { user?: AnyRecord; onCreat
             <select
               value={form.type}
               onChange={(event) => setForm({ ...form, type: event.target.value })}
-              className="h-12 w-full rounded-[24px] border border-white/70 bg-white/55 px-4 outline-none ring-[#0071e3]/15 transition focus:ring-4"
+              className="organizer-input h-12 w-full"
             >
               {organizationTypeOptions.map((option) => (
                 <option key={option.value} value={option.value}>
@@ -207,7 +208,7 @@ function OrganizationOnboarding({ user, onCreated }: { user?: AnyRecord; onCreat
           <label>
             <span className="mb-2 block text-[13px] font-semibold text-slate-500">Описание, необязательно</span>
             <textarea
-              className="min-h-[118px] w-full rounded-[24px] border border-white/70 bg-white/55 px-4 py-3 outline-none ring-[#0071e3]/15 transition focus:ring-4"
+              className="organizer-input min-h-[118px] w-full resize-none px-4 py-3"
               value={form.description}
               onChange={(event) => setForm({ ...form, description: event.target.value })}
               placeholder="Например: сообщество основателей, акселерационная программа или клуб предпринимателей"
@@ -218,7 +219,7 @@ function OrganizationOnboarding({ user, onCreated }: { user?: AnyRecord; onCreat
           {saving ? "Создаем..." : "Создать организацию"}
         </Button>
         {notice ? (
-          <div className="mt-4 rounded-[22px] border border-white/70 bg-white/55 px-4 py-3 text-[14px] font-semibold text-slate-600">
+          <div className="organizer-note mt-4 font-semibold">
             {notice}
           </div>
         ) : null}
@@ -286,11 +287,11 @@ function CreateEventPage() {
 
   return (
     <Shell>
-      <Card className="p-6 sm:p-8">
+      <Card className="organizer-card p-6 sm:p-8">
         <button aria-label="Назад к кабинету" className="organizer-back-button mb-6" onClick={() => navigate("/organizer")}>
           <ArrowLeft size={20} strokeWidth={2.2} />
         </button>
-        <h1 className="text-4xl font-semibold tracking-[-0.02em]">Создать мероприятие</h1>
+        <h1 className="fup-display text-[34px] leading-tight">Создать мероприятие</h1>
         <p className="mt-3 max-w-2xl text-[16px] leading-7 text-slate-600">
           Событие сразу получит invite code, ссылку для участников и QR для входа через Telegram Mini App.
         </p>
@@ -302,7 +303,7 @@ function CreateEventPage() {
           <label className="lg:col-span-2">
             <span className="mb-2 block text-[13px] font-semibold text-slate-500">Описание</span>
             <textarea
-              className="min-h-[110px] w-full rounded-[24px] border border-white/70 bg-white/55 px-4 py-3 outline-none ring-[#0071e3]/15 transition focus:ring-4"
+              className="organizer-input min-h-[110px] w-full resize-none px-4 py-3"
               value={form.description}
               onChange={(event) => setForm({ ...form, description: event.target.value })}
             />
@@ -320,7 +321,7 @@ function CreateEventPage() {
             ["enableRecommendations", "Включить рекомендации"],
             ["enableReminders", "Включить напоминания"],
           ].map(([key, label]) => (
-            <label key={key} className="glass-soft flex items-center justify-between rounded-[24px] px-4 py-3">
+            <label key={key} className="organizer-toggle-row flex items-center justify-between">
               <span className="text-[14px] font-semibold">{label}</span>
               <input
                 type="checkbox"
@@ -402,16 +403,16 @@ function EventPage({ eventId }: { eventId: string }) {
 
   return (
     <Shell>
-      <header className="organizer-surface rounded-[32px] p-6 sm:p-8">
+      <header className="organizer-surface organizer-hero rounded-[32px] p-6 sm:p-8">
         <button aria-label="Назад к кабинету" className="organizer-back-button mb-6" onClick={() => navigate("/organizer")}>
           <ArrowLeft size={20} strokeWidth={2.2} />
         </button>
         <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <div className="liquid-control inline-flex rounded-full px-4 py-2 text-[13px] font-semibold text-[#0066cc]">
+            <div className="organizer-chip inline-flex">
               {eventData.organization?.name}
             </div>
-            <h1 className="mt-5 text-[38px] font-semibold tracking-[-0.02em] text-[#1d1d1f] sm:text-[52px]">
+            <h1 className="fup-display mt-5 text-[34px] leading-tight text-[#1d1d1f] sm:text-[48px]">
               {eventData.event.name}
             </h1>
             <p className="mt-3 text-[16px] leading-7 text-slate-600">
@@ -430,7 +431,7 @@ function EventPage({ eventId }: { eventId: string }) {
       </header>
 
       <section className="mt-5 grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
-        <Card className="p-5">
+        <Card className="organizer-card p-5">
           <h2 className="text-2xl font-semibold">Приглашение участников</h2>
           <div className="mt-5 grid gap-3">
             <CopyRow label="Invite code" value={invite.inviteCode} />
@@ -439,7 +440,7 @@ function EventPage({ eventId }: { eventId: string }) {
             <CopyRow label="Telegram Mini App" value={invite.telegramMiniAppUrl || "Telegram bot username не задан"} />
           </div>
         </Card>
-        <Card className="p-5">
+        <Card className="organizer-card p-5">
           <div className="mb-4 flex items-center gap-2 text-[#0066cc]">
             <Radio size={20} />
             <h2 className="text-2xl font-semibold text-[#1d1d1f]">Live-регистрация</h2>
@@ -462,7 +463,7 @@ function EventPage({ eventId }: { eventId: string }) {
       </section>
 
       <section className="mt-5 grid gap-4 lg:grid-cols-[0.95fr_1.05fr]">
-        <Card className="p-5">
+        <Card className="organizer-card p-5">
           <h2 className="text-2xl font-semibold">Воронка</h2>
           <div className="mt-5 space-y-3">
             {[
@@ -473,18 +474,18 @@ function EventPage({ eventId }: { eventId: string }) {
               ["Написали", funnel.messagesSent],
               ["Получили результат", funnel.results],
             ].map(([label, value]) => (
-              <div key={String(label)} className="glass-soft flex items-center justify-between rounded-[22px] px-4 py-3">
+              <div key={String(label)} className="organizer-list-row flex items-center justify-between">
                 <span className="text-[14px] font-semibold text-slate-600">{label}</span>
                 <span className="text-xl font-semibold">{Number(value || 0)}</span>
               </div>
             ))}
           </div>
         </Card>
-        <Card className="p-5">
+        <Card className="organizer-card p-5">
           <h2 className="text-2xl font-semibold">Журнал действий</h2>
           <div className="mt-5 space-y-3">
             {(live?.recentActivity || []).slice(0, 8).map((activity: AnyRecord) => (
-              <div key={activity.id} className="flex items-start justify-between gap-4 rounded-[22px] bg-white/45 px-4 py-3">
+              <div key={activity.id} className="organizer-list-row flex items-start justify-between gap-4">
                 <div>
                   <p className="font-semibold">{activity.label}</p>
                   <p className="mt-1 text-[13px] text-slate-500">{activity.user}</p>
@@ -498,7 +499,7 @@ function EventPage({ eventId }: { eventId: string }) {
       </section>
 
       <section className="mt-5">
-        <Card className="overflow-hidden p-0">
+        <Card className="organizer-card overflow-hidden p-0">
           <TableHeader title="Активность участников" />
           <Table
             columns={["Участник", "Профиль", "Последняя активность"]}
@@ -512,7 +513,7 @@ function EventPage({ eventId }: { eventId: string }) {
       </section>
 
       <section className="mt-5">
-        <Card className="p-5 sm:p-6">
+        <Card className="organizer-card p-5 sm:p-6">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <p className="text-[13px] font-semibold uppercase text-[#0066cc]">Финальный отчет</p>
@@ -526,7 +527,7 @@ function EventPage({ eventId }: { eventId: string }) {
             </Button>
           </div>
           {reportNotice ? (
-            <div className="mt-4 rounded-[22px] border border-[#0087ff]/14 bg-white/62 px-4 py-3 text-[14px] font-medium text-[#0066cc] backdrop-blur-xl">
+            <div className="organizer-note mt-4 text-[#0066cc]">
               {reportNotice}
             </div>
           ) : null}
@@ -547,10 +548,13 @@ function EventPage({ eventId }: { eventId: string }) {
 
 function Shell({ children }: { children: ReactNode }) {
   return (
-    <section className="mx-auto w-full max-w-7xl px-4 py-4 sm:px-6 sm:py-6">
-      <div className="organizer-surface mb-4 flex items-center justify-between rounded-[28px] px-4 py-3">
-        <img src={fupLogoUrl} alt="FUP" className="h-8 w-auto" />
-        <button className="button-press text-[13px] font-semibold text-[#0066cc]" onClick={() => void apiClient.logout().then(() => window.location.assign("/organizer"))}>
+    <section className="organizer-shell mx-auto w-full max-w-7xl px-4 py-4 sm:px-6 sm:py-6">
+      <div className="organizer-topbar mb-4 flex items-center justify-between rounded-[28px] px-4 py-3">
+        <div className="flex items-center gap-3">
+          <img src={fupLogoUrl} alt="FUP" className="h-8 w-auto" />
+          <span className="hidden text-[13px] font-semibold text-slate-500 sm:inline">Organizer</span>
+        </div>
+        <button className="button-press rounded-full bg-white/58 px-4 py-2 text-[13px] font-semibold text-[#0066cc] shadow-[0_8px_18px_rgba(23,36,51,0.04)]" onClick={() => void apiClient.logout().then(() => window.location.assign("/organizer"))}>
           Выйти
         </button>
       </div>
@@ -561,8 +565,8 @@ function Shell({ children }: { children: ReactNode }) {
 
 function EmptyState({ title, text }: { title: string; text: string }) {
   return (
-    <Card className="mx-auto max-w-2xl p-8 text-center">
-      <h1 className="text-3xl font-semibold">{title}</h1>
+    <Card className="organizer-card mx-auto max-w-2xl p-8 text-center">
+      <h1 className="fup-display text-3xl">{title}</h1>
       <p className="mt-3 text-[15px] leading-7 text-slate-600">{text}</p>
     </Card>
   );
@@ -571,7 +575,7 @@ function EmptyState({ title, text }: { title: string; text: string }) {
 function OrganizerSkeleton({ title }: { title: string }) {
   return (
     <div className="space-y-5">
-      <Card className="p-6 sm:p-8">
+      <Card className="organizer-card p-6 sm:p-8">
         <div className="h-8 w-44 animate-pulse rounded-full bg-white/70" />
         <div className="mt-6 h-12 w-full max-w-xl animate-pulse rounded-full bg-white/75" />
         <div className="mt-4 h-5 w-full max-w-md animate-pulse rounded-full bg-white/60" />
@@ -579,7 +583,7 @@ function OrganizerSkeleton({ title }: { title: string }) {
       </Card>
       <div className="grid gap-4 lg:grid-cols-3">
         {[0, 1, 2].map((item) => (
-          <Card key={item} className="p-5">
+          <Card key={item} className="organizer-card p-5">
             <div className="h-5 w-24 animate-pulse rounded-full bg-white/70" />
             <div className="mt-5 h-9 w-20 animate-pulse rounded-full bg-white/75" />
             <div className="mt-4 h-4 w-32 animate-pulse rounded-full bg-white/60" />
@@ -598,7 +602,7 @@ function Field({ label, value, onChange, type = "text" }: { label: string; value
         type={type}
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="h-12 w-full rounded-[24px] border border-white/70 bg-white/55 px-4 outline-none ring-[#0071e3]/15 transition focus:ring-4"
+        className="organizer-input h-12 w-full px-4"
       />
     </label>
   );
@@ -606,7 +610,7 @@ function Field({ label, value, onChange, type = "text" }: { label: string; value
 
 function MiniMetric({ label, value }: { label: string; value: string | number }) {
   return (
-    <div className="glass-soft rounded-[24px] p-4">
+    <div className="organizer-mini-metric rounded-[24px] p-4">
       <p className="text-[12px] font-semibold text-slate-500">{label}</p>
       <p className="mt-2 truncate text-xl font-semibold">{value}</p>
     </div>
@@ -615,12 +619,12 @@ function MiniMetric({ label, value }: { label: string; value: string | number })
 
 function CopyRow({ label, value }: { label: string; value?: string }) {
   return (
-    <div className="glass-soft flex items-center justify-between gap-3 rounded-[22px] px-4 py-3">
+    <div className="organizer-list-row flex items-center justify-between gap-3">
       <div className="min-w-0">
         <p className="text-[12px] font-semibold text-slate-500">{label}</p>
         <p className="mt-1 truncate text-[14px] font-semibold">{value || "—"}</p>
       </div>
-      <button className="liquid-control rounded-full p-2 text-[#0066cc]" onClick={() => copy(value || "")} aria-label="Скопировать">
+      <button className="organizer-icon-button" onClick={() => copy(value || "")} aria-label="Скопировать">
         <Copy size={16} />
       </button>
     </div>
@@ -631,11 +635,11 @@ function QrModal({ invite, eventName, onClose }: { invite: AnyRecord; eventName:
   const payload = invite.qrPayload || invite.telegramMiniAppUrl || invite.webJoinUrl;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/20 px-4 backdrop-blur-md">
-      <Card className="w-full max-w-[440px] p-6 text-center">
+      <Card className="organizer-card w-full max-w-[440px] p-6 text-center">
         <h2 className="text-2xl font-semibold">{eventName}</h2>
         <p className="mt-2 text-[14px] leading-6 text-slate-500">Покажите этот QR участникам, чтобы они подключились к мероприятию.</p>
         {invite.inviteCode ? (
-          <div className="mt-4 inline-flex rounded-full border border-white/70 bg-white/55 px-4 py-2 text-[14px] font-semibold text-slate-600">
+          <div className="organizer-chip mt-4 inline-flex">
             Код: {invite.inviteCode}
           </div>
         ) : null}
@@ -660,12 +664,12 @@ function Table({ columns, rows }: { columns: string[]; rows: Array<Array<string 
   return (
     <div className="overflow-x-auto">
       <table className="w-full min-w-[520px] border-collapse text-left text-[14px]">
-        <thead className="bg-white/42 text-[12px] uppercase text-slate-500">
+        <thead className="bg-white/38 text-[12px] uppercase text-slate-500">
           <tr>{columns.map((column) => <th key={column} className="px-5 py-3 font-semibold">{column}</th>)}</tr>
         </thead>
         <tbody>
           {rows.map((row, index) => (
-            <tr key={`${row[0]}-${index}`} className="border-t border-white/48">
+            <tr key={`${row[0]}-${index}`} className="border-t border-white/48 transition hover:bg-white/34">
               {row.map((cell, cellIndex) => (
                 <td key={`${cell}-${cellIndex}`} className={`px-5 py-4 ${cellIndex === 0 ? "font-semibold" : ""}`}>
                   {cell}
